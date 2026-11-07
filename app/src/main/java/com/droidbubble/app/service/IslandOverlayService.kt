@@ -985,7 +985,13 @@ class IslandOverlayService : Service() {
             if (wasExpanded) {
                 wasExpanded = false
                 isCollapsing = true
-                // Keep MATCH_PARENT until the spring collapse animation has completely settled!
+                // Keep MATCH_PARENT until the spring collapse animation has completely settled, but make the
+                // window untouchable meanwhile: a full-screen touchable window swallowed every tap for ~0.4-1 s
+                // after the island was used (issue #24).
+                if ((params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) == 0) {
+                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    runCatching { windowManager?.updateViewLayout(view, params) }
+                }
                 collapseJob = serviceScope.launch {
                     kotlinx.coroutines.delay(collapseDelayMs)
                     isCollapsing = false
