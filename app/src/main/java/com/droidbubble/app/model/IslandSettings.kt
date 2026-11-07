@@ -49,6 +49,7 @@ data class IslandSettings(
     val showBluetooth: Boolean = true,
     val showCharging: Boolean = true,
     val showRingerMode: Boolean = true,
+    val showUnlock: Boolean = true,
     val showAirplaneMode: Boolean = true,
     val showInLandscape: Boolean = false,
     val animationSpeed: Float = 0.7f,

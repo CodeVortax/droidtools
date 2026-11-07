@@ -287,7 +287,7 @@ class IslandOverlayService : Service() {
             }
             if (action == Intent.ACTION_USER_PRESENT) {
                 IslandStateManager.setDeviceLocked(false)
-                IslandStateManager.triggerUnlockEvent()
+                if (currentSettings.showUnlock) IslandStateManager.triggerUnlockEvent()
                 return
             }
             if (action == Intent.ACTION_SCREEN_OFF) {
@@ -299,7 +299,7 @@ class IslandOverlayService : Service() {
                 val km = context?.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
                 val locked = km?.isKeyguardLocked == true
                 IslandStateManager.setDeviceLocked(locked)
-                if (km != null && !locked) {
+                if (km != null && !locked && currentSettings.showUnlock) {
                     IslandStateManager.triggerUnlockEvent()
                 }
                 return

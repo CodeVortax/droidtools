@@ -1294,6 +1294,24 @@ fun MainScreen(
                         )
                     }
 
+                    SettingsCardItem(position = GroupPosition.MIDDLE, isActive = settings.showUnlock) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("Unlock animation", fontWeight = FontWeight.SemiBold) },
+                            leadingContent = {
+                                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.showUnlock,
+                                    onCheckedChange = { show ->
+                                        viewModel.updateSettings { it.copy(showUnlock = show) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+
                     SettingsCardItem(position = GroupPosition.BOTTOM, isActive = settings.showAirplaneMode) {
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),

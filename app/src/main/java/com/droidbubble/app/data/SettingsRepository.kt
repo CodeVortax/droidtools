@@ -42,6 +42,7 @@ class SettingsRepository(private val context: Context) {
         val SHOW_BLUETOOTH = booleanPreferencesKey("show_bluetooth")
         val SHOW_CHARGING = booleanPreferencesKey("show_charging")
         val SHOW_RINGER_MODE = booleanPreferencesKey("show_ringer_mode")
+        val SHOW_UNLOCK = booleanPreferencesKey("show_unlock")
         val SHOW_AIRPLANE_MODE = booleanPreferencesKey("show_airplane_mode")
         val SHOW_IN_LANDSCAPE = booleanPreferencesKey("show_in_landscape")
         val ANIMATION_SPEED_MULTIPLIER = floatPreferencesKey("anim_speed_multiplier")
@@ -126,6 +127,7 @@ class SettingsRepository(private val context: Context) {
             showBluetooth = preferences[PreferencesKeys.SHOW_BLUETOOTH] ?: true,
             showCharging = preferences[PreferencesKeys.SHOW_CHARGING] ?: true,
             showRingerMode = preferences[PreferencesKeys.SHOW_RINGER_MODE] ?: true,
+            showUnlock = preferences[PreferencesKeys.SHOW_UNLOCK] ?: true,
             showAirplaneMode = preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] ?: true,
             showInLandscape = preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] ?: false,
             animationSpeed = resolvedSpeed,
@@ -230,6 +232,7 @@ class SettingsRepository(private val context: Context) {
                 showBluetooth = preferences[PreferencesKeys.SHOW_BLUETOOTH] ?: true,
                 showCharging = preferences[PreferencesKeys.SHOW_CHARGING] ?: true,
                 showRingerMode = preferences[PreferencesKeys.SHOW_RINGER_MODE] ?: true,
+                showUnlock = preferences[PreferencesKeys.SHOW_UNLOCK] ?: true,
             showAirplaneMode = preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] ?: true,
                 showInLandscape = preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] ?: false,
                 animationSpeed = resolvedSpeed,
@@ -324,6 +327,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.SHOW_BLUETOOTH] = newSettings.showBluetooth
             preferences[PreferencesKeys.SHOW_CHARGING] = newSettings.showCharging
             preferences[PreferencesKeys.SHOW_RINGER_MODE] = newSettings.showRingerMode
+            preferences[PreferencesKeys.SHOW_UNLOCK] = newSettings.showUnlock
             preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] = newSettings.showAirplaneMode
             preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] = newSettings.showInLandscape
             preferences[PreferencesKeys.ANIMATION_SPEED_MULTIPLIER] = newSettings.animationSpeed
