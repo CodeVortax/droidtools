@@ -71,6 +71,11 @@ object IslandStateManager {
 
     private val _activeAirplaneMode = MutableStateFlow<Boolean?>(null)
     val activeAirplaneMode: StateFlow<Boolean?> = _activeAirplaneMode.asStateFlow()
+
+    private val _activeClipboardEvent = MutableStateFlow<Long?>(null)
+    val activeClipboardEvent: StateFlow<Long?> = _activeClipboardEvent.asStateFlow()
+    private var clipboardJob: Job? = null
+    private var lastClipboardTriggerMs: Long = 0L
     private var airplaneJob: Job? = null
 
     private val _activeMedia = MutableStateFlow<MediaInfo?>(null)
@@ -255,6 +260,9 @@ object IslandStateManager {
     val isAirplaneModeActive: Boolean
         get() = _activeAirplaneMode.value != null
 
+    val isClipboardActive: Boolean
+        get() = _activeClipboardEvent.value != null
+
     val isRingerModeActive: Boolean
         get() = _activeRingerMode.value != null
 
@@ -263,7 +271,7 @@ object IslandStateManager {
         get() = _alarmInfo.value != null
 
     val isOccupied: Boolean
-        get() = isCallActive || isRecordingActive || isNotificationActive || isMediaActive || isProgressActive || isChargingActive || isUnlockActive || isBluetoothActive || isFlashlightActive || isRingerModeActive || isAirplaneModeActive || isAlarmActive
+        get() = isCallActive || isRecordingActive || isNotificationActive || isMediaActive || isProgressActive || isChargingActive || isUnlockActive || isBluetoothActive || isFlashlightActive || isRingerModeActive || isAirplaneModeActive || isClipboardActive || isAlarmActive
 
     // Live priority determination: Call is top priority, then Media, Flashlight, Progress, Screen Recording, and Notification alerts last
     val currentPriority: IslandPriority
@@ -351,6 +359,18 @@ object IslandStateManager {
             delay(1500) // Stay visible for 1.5 seconds exact matching Ring mode duration
             _activeAirplaneMode.value = null
             android.util.Log.d("IslandStateManager", "triggerAirplaneModeEvent finished: reset to null")
+        }
+    }
+
+    fun triggerClipboardEvent() {
+        val now = System.currentTimeMillis()
+        if (now - lastClipboardTriggerMs < 350L) return
+        lastClipboardTriggerMs = now
+        clipboardJob?.cancel()
+        _activeClipboardEvent.value = now
+        clipboardJob = scope.launch {
+            delay(1500)
+            _activeClipboardEvent.value = null
         }
     }
 

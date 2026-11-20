@@ -638,6 +638,7 @@ class IslandOverlayService : Service() {
 
         createNotificationChannel()
         initCameraTorch()
+        initClipboardListener()
         startAutoUpdateChecker()
         startSystemToolsScheduleChecker()
         initSystemToolsOverlaysObserver()
@@ -913,8 +914,9 @@ class IslandOverlayService : Service() {
                 kotlinx.coroutines.flow.combine(
                     IslandStateManager.isDeviceLocked,
                     IslandStateManager.alarmInfo,
-                    IslandStateManager.activeTaskConfirmation
-                ) { _, _, _ -> Unit }
+                    IslandStateManager.activeTaskConfirmation,
+                    IslandStateManager.activeClipboardEvent
+                ) { _, _, _, _ -> Unit }
             ) { expanded, _, _, _ -> expanded }.collectLatest { expanded ->
                 updateWindowState(expanded)
             }
@@ -1073,6 +1075,7 @@ class IslandOverlayService : Service() {
             val isBluetooth = currentSettings.showBluetooth && IslandStateManager.isBluetoothActive
             val isRingerMode = currentSettings.showRingerMode && IslandStateManager.isRingerModeActive
             val isAirplaneMode = currentSettings.showAirplaneMode && IslandStateManager.isAirplaneModeActive
+            val isClipboard = currentSettings.showClipboard && IslandStateManager.isClipboardActive
             val isFlashlight = currentSettings.showFlashlight && IslandStateManager.isFlashlightActive
             val isAlarm = currentSettings.showAlarm && IslandStateManager.isAlarmActive
             val isTaskConfirmation = IslandStateManager.isTaskConfirmationActive
@@ -1087,6 +1090,7 @@ class IslandOverlayService : Service() {
                     isBluetooth ||
                     isRingerMode ||
                     isAirplaneMode ||
+                    isClipboard ||
                     isAlarm ||
                     isTaskConfirmation
             val hasPersistentWidgets = currentSettings.showFps || currentSettings.showWeather || currentSettings.showNetworkSpeed || isAlarm
@@ -1132,7 +1136,7 @@ class IslandOverlayService : Service() {
                 }
             }
 
-            if (isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode) {
+            if (isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode || isClipboard) {
                 isCollapsing = false
                 collapseJob?.cancel()
             } else if (isCollapsing) {
@@ -1340,6 +1344,11 @@ override fun onDestroy() {
             runCatching { cameraManager?.unregisterTorchCallback(cb) }
         }
         torchCallback = null
+        primaryClipListener?.let { listener ->
+            runCatching { clipboardManager?.removePrimaryClipChangedListener(listener) }
+        }
+        primaryClipListener = null
+        clipboardManager = null
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -1347,6 +1356,21 @@ override fun onDestroy() {
         serviceScope.cancel()
     }
 
+
+    private var clipboardManager: android.content.ClipboardManager? = null
+    private var primaryClipListener: android.content.ClipboardManager.OnPrimaryClipChangedListener? = null
+
+    private fun initClipboardListener() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        clipboardManager = cm
+        val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            if (currentSettings.showClipboard) {
+                IslandStateManager.triggerClipboardEvent()
+            }
+        }
+        primaryClipListener = listener
+        runCatching { cm.addPrimaryClipChangedListener(listener) }
+    }
 
     private fun initSystemToolsOverlaysObserver() {
         val toolsManager = com.droidbubble.app.tools.SystemToolsManager.getInstance(applicationContext)

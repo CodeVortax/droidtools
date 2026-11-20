@@ -36,6 +36,12 @@
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="*/*" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VOICE_COMMAND" />
+        </intent>
         <package android:name="com.google.android.gm" />
         <package android:name="com.zoho.mail" />
         <package android:name="moe.shizuku.privileged.api" />

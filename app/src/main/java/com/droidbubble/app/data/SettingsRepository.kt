@@ -44,6 +44,7 @@ class SettingsRepository(private val context: Context) {
         val SHOW_CHARGING = booleanPreferencesKey("show_charging")
         val SHOW_RINGER_MODE = booleanPreferencesKey("show_ringer_mode")
         val SHOW_AIRPLANE_MODE = booleanPreferencesKey("show_airplane_mode")
+        val SHOW_CLIPBOARD = booleanPreferencesKey("show_clipboard")
         val SHOW_IN_LANDSCAPE = booleanPreferencesKey("show_in_landscape")
         val ANIMATION_SPEED_MULTIPLIER = floatPreferencesKey("anim_speed_multiplier")
         val LEGACY_ANIMATION_SPEED = stringPreferencesKey("animation_speed")
@@ -88,6 +89,7 @@ class SettingsRepository(private val context: Context) {
         val DROIDBAR_SHOW_SCREENSHOT = booleanPreferencesKey("droidbar_show_screenshot")
         val DROIDBAR_SHOW_WIFI = booleanPreferencesKey("droidbar_show_wifi")
         val DROIDBAR_SHOW_MOBILE_DATA = booleanPreferencesKey("droidbar_show_mobile_data")
+        val DROIDBAR_SHOW_ASSISTANT = booleanPreferencesKey("droidbar_show_assistant")
         val DROIDBAR_USE_MOST_USED_APPS = booleanPreferencesKey("droidbar_use_most_used_apps")
         val DROIDBAR_CUSTOM_APPS = stringPreferencesKey("droidbar_custom_apps")
         val DROIDBAR_SHORTCUT_IDS = stringPreferencesKey("droidbar_shortcut_ids")
@@ -131,6 +133,7 @@ class SettingsRepository(private val context: Context) {
             showCharging = preferences[PreferencesKeys.SHOW_CHARGING] ?: true,
             showRingerMode = preferences[PreferencesKeys.SHOW_RINGER_MODE] ?: true,
             showAirplaneMode = preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] ?: true,
+            showClipboard = preferences[PreferencesKeys.SHOW_CLIPBOARD] ?: true,
             showInLandscape = preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] ?: false,
             animationSpeed = resolvedSpeed,
             blockedPackages = preferences[PreferencesKeys.BLOCKED_PACKAGES] ?: emptySet(),
@@ -190,6 +193,7 @@ class SettingsRepository(private val context: Context) {
             droidbarShowScreenshot = preferences[PreferencesKeys.DROIDBAR_SHOW_SCREENSHOT] ?: true,
             droidbarShowWifi = preferences[PreferencesKeys.DROIDBAR_SHOW_WIFI] ?: true,
             droidbarShowMobileData = preferences[PreferencesKeys.DROIDBAR_SHOW_MOBILE_DATA] ?: true,
+            droidbarShowAssistant = preferences[PreferencesKeys.DROIDBAR_SHOW_ASSISTANT] ?: true,
             droidbarUseMostUsedApps = preferences[PreferencesKeys.DROIDBAR_USE_MOST_USED_APPS] ?: true,
             droidbarCustomApps = preferences[PreferencesKeys.DROIDBAR_CUSTOM_APPS]
                 ?.split(",")
@@ -241,6 +245,7 @@ class SettingsRepository(private val context: Context) {
                 showCharging = preferences[PreferencesKeys.SHOW_CHARGING] ?: true,
                 showRingerMode = preferences[PreferencesKeys.SHOW_RINGER_MODE] ?: true,
             showAirplaneMode = preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] ?: true,
+            showClipboard = preferences[PreferencesKeys.SHOW_CLIPBOARD] ?: true,
                 showInLandscape = preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] ?: false,
                 animationSpeed = resolvedSpeed,
                 blockedPackages = preferences[PreferencesKeys.BLOCKED_PACKAGES] ?: emptySet(),
@@ -300,6 +305,7 @@ class SettingsRepository(private val context: Context) {
             droidbarShowScreenshot = preferences[PreferencesKeys.DROIDBAR_SHOW_SCREENSHOT] ?: true,
             droidbarShowWifi = preferences[PreferencesKeys.DROIDBAR_SHOW_WIFI] ?: true,
             droidbarShowMobileData = preferences[PreferencesKeys.DROIDBAR_SHOW_MOBILE_DATA] ?: true,
+            droidbarShowAssistant = preferences[PreferencesKeys.DROIDBAR_SHOW_ASSISTANT] ?: true,
             droidbarUseMostUsedApps = preferences[PreferencesKeys.DROIDBAR_USE_MOST_USED_APPS] ?: true,
             droidbarCustomApps = preferences[PreferencesKeys.DROIDBAR_CUSTOM_APPS]
                 ?.split(",")
@@ -341,6 +347,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.SHOW_CHARGING] = newSettings.showCharging
             preferences[PreferencesKeys.SHOW_RINGER_MODE] = newSettings.showRingerMode
             preferences[PreferencesKeys.SHOW_AIRPLANE_MODE] = newSettings.showAirplaneMode
+            preferences[PreferencesKeys.SHOW_CLIPBOARD] = newSettings.showClipboard
             preferences[PreferencesKeys.SHOW_IN_LANDSCAPE] = newSettings.showInLandscape
             preferences[PreferencesKeys.ANIMATION_SPEED_MULTIPLIER] = newSettings.animationSpeed
             preferences.remove(PreferencesKeys.LEGACY_ANIMATION_SPEED)
@@ -385,6 +392,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.DROIDBAR_SHOW_SCREENSHOT] = newSettings.droidbarShowScreenshot
             preferences[PreferencesKeys.DROIDBAR_SHOW_WIFI] = newSettings.droidbarShowWifi
             preferences[PreferencesKeys.DROIDBAR_SHOW_MOBILE_DATA] = newSettings.droidbarShowMobileData
+            preferences[PreferencesKeys.DROIDBAR_SHOW_ASSISTANT] = newSettings.droidbarShowAssistant
             preferences[PreferencesKeys.DROIDBAR_USE_MOST_USED_APPS] = newSettings.droidbarUseMostUsedApps
             preferences[PreferencesKeys.DROIDBAR_CUSTOM_APPS] = newSettings.droidbarCustomApps.joinToString(",")
             preferences[PreferencesKeys.DROIDBAR_SHORTCUT_IDS] = newSettings.droidbarShortcutIds.joinToString(",")

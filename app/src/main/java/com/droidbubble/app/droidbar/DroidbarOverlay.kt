@@ -66,8 +66,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
+import com.droidbubble.app.R
 import com.droidbubble.app.island.IslandStateManager
 import com.droidbubble.app.island.M3CookieShape
 import com.droidbubble.app.model.IslandSettings
@@ -212,7 +214,8 @@ fun DroidbarOverlay(
             (if (settings.droidbarShowRingMode) 1 else 0) +
             (if (settings.droidbarShowScreenshot) 1 else 0) +
             (if (settings.droidbarShowWifi) 1 else 0) +
-            (if (settings.droidbarShowMobileData) 1 else 0)
+            (if (settings.droidbarShowMobileData) 1 else 0) +
+            (if (settings.droidbarShowAssistant) 1 else 0)
 
     val hasControls = controlCount > 0
     val shortcutCount = droidbarShortcuts.size
@@ -258,6 +261,7 @@ fun DroidbarOverlay(
     val (screenshotBounceScale, triggerScreenshotBounce) = rememberBounceScale()
     val (wifiBounceScale, triggerWifiBounce) = rememberBounceScale()
     val (mobileDataBounceScale, triggerMobileDataBounce) = rememberBounceScale()
+    val (assistantBounceScale, triggerAssistantBounce) = rememberBounceScale()
 
     Box(
         modifier = Modifier
@@ -537,6 +541,35 @@ fun DroidbarOverlay(
                             }
                         }
 
+                        // 6. Default Assistant launch control (12-sided M3 Cookie Shape, subtle bounce)
+                        if (settings.droidbarShowAssistant) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .graphicsLayer {
+                                        scaleX = assistantBounceScale
+                                        scaleY = assistantBounceScale
+                                    },
+                                shape = M3CookieShape,
+                                color = Color(0xFF262628),
+                                contentColor = Color.White,
+                                onClick = {
+                                    triggerAssistantBounce()
+                                    performTapHaptic()
+                                    isExpanded = false
+                                    launchDefaultAssistant(context)
+                                }
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_assistant_mic),
+                                        contentDescription = "Assistant",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         // Subtle divider after controls
                         if (hasControls && (hasShortcuts || hasApps)) {
                             Box(
@@ -772,6 +805,25 @@ private fun openMobileDataPanel(context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+        }
+    }
+}
+
+/**
+ * Launches the phone's default digital assistant.
+ */
+private fun launchDefaultAssistant(context: Context) {
+    val assistIntent = Intent(Intent.ACTION_ASSIST).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching {
+        context.startActivity(assistIntent)
+    }.onFailure {
+        runCatching {
+            val voiceIntent = Intent(Intent.ACTION_VOICE_COMMAND).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(voiceIntent)
         }
     }
 }

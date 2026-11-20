@@ -33,6 +33,10 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Screenshot
 import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
+import com.droidbubble.app.R
 
 
 import android.content.ClipData
@@ -112,6 +116,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Emergency
 import androidx.compose.material.icons.filled.Download
@@ -1539,7 +1544,7 @@ fun MainScreen(
                         )
                     }
 
-                    SettingsCardItem(position = GroupPosition.BOTTOM, isActive = settings.showAirplaneMode) {
+                    SettingsCardItem(position = GroupPosition.MIDDLE, isActive = settings.showAirplaneMode) {
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Airplane Mode", fontWeight = FontWeight.SemiBold) },
@@ -1551,6 +1556,24 @@ fun MainScreen(
                                     checked = settings.showAirplaneMode,
                                     onCheckedChange = { show ->
                                         viewModel.updateSettings { it.copy(showAirplaneMode = show) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+
+                    SettingsCardItem(position = GroupPosition.BOTTOM, isActive = settings.showClipboard) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("Clipboard", fontWeight = FontWeight.SemiBold) },
+                            leadingContent = {
+                                Icon(Icons.Default.ContentPaste, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.showClipboard,
+                                    onCheckedChange = { show ->
+                                        viewModel.updateSettings { it.copy(showClipboard = show) }
                                     }
                                 )
                             }
@@ -2181,6 +2204,21 @@ fun CookieIconBox(
     isChecked: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    CookieIconBox(
+        painter = rememberVectorPainter(icon),
+        contentDescription = contentDescription,
+        isChecked = isChecked,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun CookieIconBox(
+    painter: Painter,
+    contentDescription: String? = null,
+    isChecked: Boolean = false,
+    modifier: Modifier = Modifier
+) {
     val isDark = isSystemInDarkTheme()
     val containerColor = lerp(
         MaterialTheme.colorScheme.primaryContainer,
@@ -2212,7 +2250,7 @@ fun CookieIconBox(
             color = containerColor
         ) {}
         Icon(
-            imageVector = icon,
+            painter = painter,
             contentDescription = contentDescription,
             modifier = Modifier.size(20.dp),
             tint = iconTint
@@ -2680,7 +2718,7 @@ fun CutoutPositionSelectorCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
@@ -2692,7 +2730,7 @@ fun CutoutPositionSelectorCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CutoutPositionOptionButton(
                     label = "Center",
@@ -2737,19 +2775,11 @@ private fun CutoutPositionOptionButton(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
+            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.42f)
         },
         label = "cutoutBtnBg"
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-        },
-        label = "cutoutBtnBorder"
     )
     val contentColor by animateColorAsState(
         targetValue = if (isSelected) {
@@ -2762,25 +2792,24 @@ private fun CutoutPositionOptionButton(
     val bezelStrokeColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-    }
-    val screenFillColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
     }
     val cutoutDotColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
     }
 
     Surface(
         onClick = onClick,
-        modifier = modifier.height(106.dp),
-        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.height(92.dp),
+        shape = RoundedCornerShape(16.dp),
         color = containerColor,
-        border = BorderStroke(if (isSelected) 2.dp else 1.dp, borderColor)
+        border = if (isSelected) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+        } else {
+            null
+        }
     ) {
         Column(
             modifier = Modifier
@@ -2789,30 +2818,19 @@ private fun CutoutPositionOptionButton(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Cropped top phone bezel illustration with just the selfie camera circle (or tear-drop notch)
+            // Minimalist top phone bezel glyph with cutout position
             androidx.compose.foundation.Canvas(
                 modifier = Modifier
-                    .width(74.dp)
-                    .height(50.dp)
+                    .width(64.dp)
+                    .height(40.dp)
             ) {
-                val strokePx = 2.3.dp.toPx()
-                val cornerPx = 13.dp.toPx()
+                val strokePx = 1.7.dp.toPx()
+                val cornerPx = 11.dp.toPx()
                 val padX = 4.dp.toPx()
                 val topY = 4.dp.toPx()
                 val bottomY = size.height
                 val leftX = padX
                 val rightX = size.width - padX
-
-                val bezelFillPath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(leftX, bottomY)
-                    lineTo(leftX, topY + cornerPx)
-                    quadraticTo(leftX, topY, leftX + cornerPx, topY)
-                    lineTo(rightX - cornerPx, topY)
-                    quadraticTo(rightX, topY, rightX, topY + cornerPx)
-                    lineTo(rightX, bottomY)
-                    close()
-                }
-                drawPath(path = bezelFillPath, color = screenFillColor)
 
                 val bezelOutlinePath = androidx.compose.ui.graphics.Path().apply {
                     moveTo(leftX, bottomY)
@@ -2833,10 +2851,10 @@ private fun CutoutPositionOptionButton(
                 )
 
                 val centerX = size.width / 2f
+                val holeY = topY + 10.dp.toPx()
+                val holeRadius = 3.5.dp.toPx()
                 when (mode) {
                     CutoutModeOption.CENTER -> {
-                        val holeY = topY + 12.dp.toPx()
-                        val holeRadius = 4.2.dp.toPx()
                         drawCircle(
                             color = cutoutDotColor,
                             radius = holeRadius,
@@ -2844,29 +2862,22 @@ private fun CutoutPositionOptionButton(
                         )
                     }
                     CutoutModeOption.LEFT -> {
-                        val holeY = topY + 12.dp.toPx()
-                        val holeRadius = 4.2.dp.toPx()
-                        val holeX = leftX + 14.dp.toPx()
                         drawCircle(
                             color = cutoutDotColor,
                             radius = holeRadius,
-                            center = androidx.compose.ui.geometry.Offset(holeX, holeY)
+                            center = androidx.compose.ui.geometry.Offset(leftX + 12.dp.toPx(), holeY)
                         )
                     }
                     CutoutModeOption.RIGHT -> {
-                        val holeY = topY + 12.dp.toPx()
-                        val holeRadius = 4.2.dp.toPx()
-                        val holeX = rightX - 14.dp.toPx()
                         drawCircle(
                             color = cutoutDotColor,
                             radius = holeRadius,
-                            center = androidx.compose.ui.geometry.Offset(holeX, holeY)
+                            center = androidx.compose.ui.geometry.Offset(rightX - 12.dp.toPx(), holeY)
                         )
                     }
                     CutoutModeOption.TEARDROP -> {
-                        // Outward-rounded top corners blending from the top bezel into a centered tear-drop semicircle
-                        val dropR = 7.dp.toPx()
-                        val earR = 5.dp.toPx()
+                        val dropR = 6.dp.toPx()
+                        val earR = 4.dp.toPx()
                         val dropBottomY = topY + dropR * 1.45f
                         val teardropPath = androidx.compose.ui.graphics.Path().apply {
                             moveTo(centerX - dropR - earR, topY)
@@ -2892,8 +2903,8 @@ private fun CutoutPositionOptionButton(
 
             Text(
                 text = label,
-                fontSize = 12.5.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 12.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                 color = contentColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -4474,7 +4485,7 @@ fun DroidbarPage(
                         )
                     }
 
-                    SettingsCardItem(position = GroupPosition.BOTTOM) {
+                    SettingsCardItem(position = GroupPosition.MIDDLE) {
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Mobile data", fontWeight = FontWeight.SemiBold) },
@@ -4489,6 +4500,27 @@ fun DroidbarPage(
                                     checked = settings.droidbarShowMobileData,
                                     onCheckedChange = { checked ->
                                         onUpdateSettings { it.copy(droidbarShowMobileData = checked) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+
+                    SettingsCardItem(position = GroupPosition.BOTTOM) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("Assistant", fontWeight = FontWeight.SemiBold) },
+                            leadingContent = {
+                                CookieIconBox(
+                                    painter = painterResource(R.drawable.ic_assistant_mic),
+                                    isChecked = settings.droidbarShowAssistant
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.droidbarShowAssistant,
+                                    onCheckedChange = { checked ->
+                                        onUpdateSettings { it.copy(droidbarShowAssistant = checked) }
                                     }
                                 )
                             }

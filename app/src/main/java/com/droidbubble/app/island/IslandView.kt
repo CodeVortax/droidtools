@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -549,6 +550,16 @@ fun IslandOverlayRoot(
     val isRingerMode = allowInOrientation && settings.showRingerMode && activeRingerMode != null && !isCharging && !isUnlock && !isBluetooth
     val isAirplaneMode = allowInOrientation && settings.showAirplaneMode && activeAirplaneMode != null && !isCharging && !isUnlock && !isBluetooth && !isRingerMode
 
+    val activeClipboardEvent by IslandStateManager.activeClipboardEvent.collectAsState()
+    var lastClipboardTimestamp by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(activeClipboardEvent) {
+        if (activeClipboardEvent != null) {
+            lastClipboardTimestamp = activeClipboardEvent
+        }
+    }
+    val displayClipboardTimestamp = activeClipboardEvent ?: lastClipboardTimestamp
+    val isClipboard = allowInOrientation && settings.showClipboard && activeClipboardEvent != null && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode
+
     val activeTaskConfirmation by IslandStateManager.activeTaskConfirmation.collectAsState()
     var lastTaskConfirmation by remember { mutableStateOf<IslandStateManager.TaskConfirmation?>(null) }
     LaunchedEffect(activeTaskConfirmation) {
@@ -568,7 +579,7 @@ fun IslandOverlayRoot(
     val isNetworkSpeed = allowInOrientation && settings.showNetworkSpeed
     val hasPersistent = isFps || isWeather || isNetworkSpeed || isAlarm
 
-    val isOccupied = allowInOrientation && (isCall || isRecording || isNotification || isMedia || isProgress || isCharging || isPersistentCharging || isUnlock || isBluetooth || isFlashlight || isRingerMode || isAirplaneMode || isTaskConfirmation || hasPersistent)
+    val isOccupied = allowInOrientation && (isCall || isRecording || isNotification || isMedia || isProgress || isCharging || isPersistentCharging || isUnlock || isBluetooth || isFlashlight || isRingerMode || isAirplaneMode || isClipboard || isTaskConfirmation || hasPersistent)
 
     // Unified priority list ordered dynamically by settings.featurePriorities (with persistent views at the bottom by default):
     val orderedActivePriorities = buildList {
@@ -601,8 +612,8 @@ fun IslandOverlayRoot(
     }
 
     val activeCount = orderedActivePriorities.size
-    val isDual = !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && activeCount >= 2
-    val isTriple = !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && activeCount >= 3
+    val isDual = !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation && activeCount >= 2
+    val isTriple = !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation && activeCount >= 3
     val isCompactDual = isDual && settings.showDualActivityInCompact
     val speed = settings.animationSpeed.coerceIn(0.5f, 2.0f)
     val speedSq = speed * speed
@@ -708,7 +719,7 @@ fun IslandOverlayRoot(
 
     // Animation Specs (dynamically scaled by settings.animationSpeed):
     val sizeAnimSpecDp = when {
-        isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode || isTaskConfirmation -> spring<androidx.compose.ui.unit.Dp>(
+        isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode || isClipboard || isTaskConfirmation -> spring<androidx.compose.ui.unit.Dp>(
             dampingRatio = settings.appearDamping,
             stiffness = settings.appearStiffness * speedSq
         )
@@ -723,7 +734,7 @@ fun IslandOverlayRoot(
     }
 
     val sizeAnimSpecFloat = when {
-        isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode || isTaskConfirmation -> spring<Float>(
+        isCharging || isUnlock || isBluetooth || isRingerMode || isAirplaneMode || isClipboard || isTaskConfirmation -> spring<Float>(
             dampingRatio = settings.appearDamping,
             stiffness = settings.appearStiffness * speedSq
         )
@@ -976,6 +987,12 @@ fun IslandOverlayRoot(
         label = "taskConfirmationAlpha"
     )
 
+    val clipboardContentAlpha by animateFloatAsState(
+        targetValue = if (isClipboard) 1f else 0f,
+        animationSpec = tween(durationMillis = (130 / speed).roundToInt(), easing = FastOutSlowInEasing),
+        label = "clipboardContentAlpha"
+    )
+
     // Airplane Mode animations:
     val airplaneContentAlpha by animateFloatAsState(
         targetValue = if (isAirplaneMode) 1f else 0f,
@@ -1075,6 +1092,11 @@ fun IslandOverlayRoot(
     } else {
         (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
     }
+    val clipboardIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(96.dp, 190.dp)
+    } else {
+        (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
+    }
     val fpsIslandWidth = if (isSideCutout) {
         settings.widthDp.dp.coerceIn(90.dp, 190.dp)
     } else {
@@ -1132,6 +1154,7 @@ fun IslandOverlayRoot(
         isTaskConfirmation -> taskConfirmationIslandWidth
         isRingerMode -> ringerIslandWidth
         isAirplaneMode -> airplaneIslandWidth
+        isClipboard -> clipboardIslandWidth
         isUnlock || isBluetooth -> unlockIslandWidth
         isCompactDual && !isSwapMerging -> compactMainFull + (teardropEarRadius * 2f)
         isCallActive -> callIslandWidth
@@ -1162,7 +1185,7 @@ fun IslandOverlayRoot(
     val portraitScreenWidthDp = minOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
     val portraitScreenHeightDp = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
     val screenWidth = portraitScreenWidthDp
-    val targetCard1Width = if (isExpanded && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation) {
+    val targetCard1Width = if (isExpanded && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation) {
         (340.dp * settings.expandedScale).coerceAtMost(screenWidth - 16.dp)
     } else {
         0.dp
@@ -2645,7 +2668,7 @@ fun IslandOverlayRoot(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = {
-                                if (!isExpanded && (isOccupied || hasPersistent) && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation) {
+                                if (!isExpanded && (isOccupied || hasPersistent) && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation) {
                                     triggerHaptic()
                                     IslandStateManager.expand(primaryPriority)
                                 } else if (!isExpanded && !isOccupied && !hasPersistent && settings.alwaysShowPill) {
@@ -2697,7 +2720,7 @@ fun IslandOverlayRoot(
                                 }
                             },
                             onLongClick = {
-                                if (!isExpanded && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation) {
+                                if (!isExpanded && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation) {
                                     triggerHaptic()
                                     openAppForPriority(
                                         context = context,
@@ -2991,6 +3014,15 @@ fun IslandOverlayRoot(
                             teardropEarRadius = teardropEarRadius,
                             designLanguage = settings.designLanguage
                         )
+                    } else if (isClipboard || clipboardContentAlpha > 0.01f) {
+                        ClipboardPill(
+                            timestamp = displayClipboardTimestamp,
+                            isLeftCutout = settings.isLeftCutout,
+                            isRightCutout = settings.isRightCutout,
+                            contentAlpha = clipboardContentAlpha,
+                            teardropEarRadius = teardropEarRadius,
+                            designLanguage = settings.designLanguage
+                        )
                     } else if (isTaskConfirmation || taskConfirmationAlpha > 0.01f) {
                         TaskConfirmationPill(
                             confirmation = displayTaskConfirmation,
@@ -3067,7 +3099,7 @@ fun IslandOverlayRoot(
                     else -> -animatedCompactWidth / 2f + animatedDualMainShiftX
                 }
                 val bubbleLeftEdge = -animatedBubbleOffsetX
-                val islandLeftDp = if (settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
+                val islandLeftDp = if (settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
                     minOf(mainPillLeftEdge, bubbleLeftEdge)
                 } else {
                     mainPillLeftEdge
@@ -3090,7 +3122,7 @@ fun IslandOverlayRoot(
                 } else {
                     animatedBubbleOffsetX + (bubbleSize / 2f)
                 }
-                val rightContentEdgeDp = if (!settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
+                val rightContentEdgeDp = if (!settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isClipboard && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
                     maxOf(mainPillRightEdge, bubbleRightEdge)
                 } else {
                     mainPillRightEdge
@@ -7258,6 +7290,101 @@ private fun TaskConfirmationPill(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Success",
+                    tint = checkmarkTint,
+                    modifier = Modifier
+                        .size(19.dp)
+                        .graphicsLayer {
+                            scaleX = checkmarkScale.value
+                            scaleY = checkmarkScale.value
+                        }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipboardPill(
+    timestamp: Long?,
+    isLeftCutout: Boolean,
+    isRightCutout: Boolean = false,
+    contentAlpha: Float,
+    teardropEarRadius: Dp,
+    designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE
+) {
+    val isM3 = designLanguage == DesignLanguage.MATERIAL3
+    val clipboardTint = if (isM3) MaterialTheme.colorScheme.onSurface else Color.White
+    val checkmarkTint = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFF30D158)
+    val checkmarkScale = remember { Animatable(0.4f) }
+    LaunchedEffect(timestamp) {
+        if (timestamp != null) {
+            checkmarkScale.snapTo(0.4f)
+            checkmarkScale.animateTo(
+                1f,
+                spring(dampingRatio = 0.52f, stiffness = 550f)
+            )
+        }
+    }
+
+    if (isLeftCutout || isRightCutout) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = if (isLeftCutout) 38.dp else 12.dp,
+                    end = if (isRightCutout) 38.dp else 12.dp
+                )
+                .graphicsLayer { alpha = contentAlpha },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
+        ) {
+            Icon(
+                imageVector = Icons.Default.ContentPaste,
+                contentDescription = "Clipboard",
+                tint = clipboardTint,
+                modifier = Modifier.size(18.dp)
+            )
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Copied",
+                tint = checkmarkTint,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer {
+                        scaleX = checkmarkScale.value
+                        scaleY = checkmarkScale.value
+                    }
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp + teardropEarRadius)
+                .graphicsLayer { alpha = contentAlpha },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentPaste,
+                    contentDescription = "Clipboard",
+                    tint = clipboardTint,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(28.dp))
+
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Copied",
                     tint = checkmarkTint,
                     modifier = Modifier
                         .size(19.dp)
