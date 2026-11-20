@@ -115,6 +115,8 @@ class IslandOverlayService : Service() {
     private var droidbarView: ComposeView? = null
     private var droidbarParams: WindowManager.LayoutParams? = null
     private var isDroidbarExpanded: Boolean = false
+    private var pixelGridView: com.droidbubble.app.tools.PixelGridOverlayView? = null
+    private var lightingOverlayView: ComposeView? = null
 
     private val lifecycleOwner = CustomLifecycleOwner()
     private var currentSettings = IslandSettings()
@@ -254,13 +256,100 @@ class IslandOverlayService : Service() {
 
     private var lastRingerMode: Int? = null
     private var lastAirplaneModeState: Boolean? = null
+    private var lastBatteryPercentage: Int? = null
+    private var lastWifiConnectedState: Boolean? = null
+    private val firedScheduleTriggerKeys = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun fireDeviceEventAutomations(eventType: com.droidbubble.app.tasks.DeviceEventType) {
+        val repo = com.droidbubble.app.tasks.TasksRepository.getInstance(applicationContext)
+        val shortcuts = repo.shortcuts.value
+        for (shortcut in shortcuts) {
+            if (!shortcut.automationEnabled || shortcut.triggers.isEmpty()) continue
+            val matched = shortcut.triggers.any { trigger ->
+                trigger is com.droidbubble.app.tasks.TaskTrigger.DeviceEvent && trigger.eventType == eventType
+            }
+            if (matched) {
+                com.droidbubble.app.tasks.TaskExecutor.execute(this@IslandOverlayService, shortcut)
+            }
+        }
+    }
+
+    private fun evaluateBatteryThresholdAutomations(previousPct: Int?, currentPct: Int) {
+        if (previousPct == currentPct) return
+        val repo = com.droidbubble.app.tasks.TasksRepository.getInstance(applicationContext)
+        val shortcuts = repo.shortcuts.value
+        for (shortcut in shortcuts) {
+            if (!shortcut.automationEnabled || shortcut.triggers.isEmpty()) continue
+            val matched = shortcut.triggers.any { trigger ->
+                if (trigger !is com.droidbubble.app.tasks.TaskTrigger.DeviceEvent) return@any false
+                val target = trigger.batteryThreshold.coerceIn(1, 100)
+                when (trigger.eventType) {
+                    com.droidbubble.app.tasks.DeviceEventType.BATTERY_AT_LEVEL ->
+                        currentPct == target && previousPct != target
+                    com.droidbubble.app.tasks.DeviceEventType.BATTERY_BELOW_LEVEL ->
+                        currentPct <= target && (previousPct == null || previousPct > target)
+                    com.droidbubble.app.tasks.DeviceEventType.BATTERY_ABOVE_LEVEL ->
+                        currentPct >= target && (previousPct == null || previousPct < target)
+                    else -> false
+                }
+            }
+            if (matched) {
+                com.droidbubble.app.tasks.TaskExecutor.execute(this@IslandOverlayService, shortcut)
+            }
+        }
+    }
+
+    private fun evaluateTimeAndDateAutomations() {
+        val repo = com.droidbubble.app.tasks.TasksRepository.getInstance(applicationContext)
+        val shortcuts = repo.shortcuts.value
+        if (shortcuts.isEmpty()) return
+
+        val cal = java.util.Calendar.getInstance()
+        val year = cal.get(java.util.Calendar.YEAR)
+        val month = cal.get(java.util.Calendar.MONTH) + 1 // 1..12
+        val dayOfMonth = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+        val minute = cal.get(java.util.Calendar.MINUTE)
+        // Convert Calendar.DAY_OF_WEEK (Sun=1..Sat=7) to ISO day of week (Mon=1..Sun=7)
+        val calDow = cal.get(java.util.Calendar.DAY_OF_WEEK)
+        val isoDayOfWeek = if (calDow == java.util.Calendar.SUNDAY) 7 else calDow - 1
+
+        val currentMinuteStamp = "$year-$month-$dayOfMonth-$hour:$minute"
+
+        for (shortcut in shortcuts) {
+            if (!shortcut.automationEnabled || shortcut.triggers.isEmpty()) continue
+            for (trigger in shortcut.triggers) {
+                val shouldFire = when (trigger) {
+                    is com.droidbubble.app.tasks.TaskTrigger.TimeSchedule -> {
+                        val days = if (trigger.daysOfWeek.isEmpty()) setOf(1, 2, 3, 4, 5, 6, 7) else trigger.daysOfWeek
+                        trigger.hour == hour && trigger.minute == minute && isoDayOfWeek in days
+                    }
+                    is com.droidbubble.app.tasks.TaskTrigger.SpecificDate -> {
+                        trigger.year == year &&
+                            trigger.month == month &&
+                            trigger.dayOfMonth == dayOfMonth &&
+                            trigger.hour == hour &&
+                            trigger.minute == minute
+                    }
+                    else -> false
+                }
+                if (shouldFire) {
+                    val triggerKey = "${shortcut.id}::${trigger.id}"
+                    val lastStamp = firedScheduleTriggerKeys[triggerKey]
+                    if (lastStamp != currentMinuteStamp) {
+                        firedScheduleTriggerKeys[triggerKey] = currentMinuteStamp
+                        com.droidbubble.app.tasks.TaskExecutor.execute(this@IslandOverlayService, shortcut)
+                    }
+                }
+            }
+        }
+    }
 
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
             Log.d("IslandOverlayService", "System broadcast received: $action")
             if (action == AudioManager.RINGER_MODE_CHANGED_ACTION || action == "android.media.INTERNAL_RINGER_MODE_CHANGED_ACTION") {
-                if (!currentSettings.showRingerMode) return
                 val mode = intent.getIntExtra(AudioManager.EXTRA_RINGER_MODE, -1)
                 val am = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
                 val currentMode = if (mode != -1) mode else (am?.ringerMode ?: return)
@@ -269,30 +358,46 @@ class IslandOverlayService : Service() {
                 }
                 lastRingerMode = currentMode
                 when (currentMode) {
-                    AudioManager.RINGER_MODE_SILENT -> IslandStateManager.triggerRingerModeEvent(RingerMode.SILENT)
-                    AudioManager.RINGER_MODE_VIBRATE -> IslandStateManager.triggerRingerModeEvent(RingerMode.VIBRATE)
-                    AudioManager.RINGER_MODE_NORMAL -> IslandStateManager.triggerRingerModeEvent(RingerMode.RING)
+                    AudioManager.RINGER_MODE_SILENT -> {
+                        if (currentSettings.showRingerMode) IslandStateManager.triggerRingerModeEvent(RingerMode.SILENT)
+                        fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.RINGER_SILENT)
+                    }
+                    AudioManager.RINGER_MODE_VIBRATE -> {
+                        if (currentSettings.showRingerMode) IslandStateManager.triggerRingerModeEvent(RingerMode.VIBRATE)
+                        fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.RINGER_VIBRATE)
+                    }
+                    AudioManager.RINGER_MODE_NORMAL -> {
+                        if (currentSettings.showRingerMode) IslandStateManager.triggerRingerModeEvent(RingerMode.RING)
+                        fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.RINGER_NORMAL)
+                    }
                 }
                 return
             }
             if (action == Intent.ACTION_AIRPLANE_MODE_CHANGED) {
-                if (!currentSettings.showAirplaneMode) return
                 val state = intent.getBooleanExtra("state", false)
                 if (lastAirplaneModeState == state) {
                     return
                 }
                 lastAirplaneModeState = state
-                IslandStateManager.triggerAirplaneModeEvent(state)
+                if (currentSettings.showAirplaneMode) {
+                    IslandStateManager.triggerAirplaneModeEvent(state)
+                }
+                fireDeviceEventAutomations(
+                    if (state) com.droidbubble.app.tasks.DeviceEventType.AIRPLANE_MODE_ON
+                    else com.droidbubble.app.tasks.DeviceEventType.AIRPLANE_MODE_OFF
+                )
                 return
             }
             if (action == Intent.ACTION_USER_PRESENT) {
                 IslandStateManager.setDeviceLocked(false)
                 IslandStateManager.triggerUnlockEvent()
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.SCREEN_UNLOCKED)
                 return
             }
             if (action == Intent.ACTION_SCREEN_OFF) {
                 val km = context?.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
                 IslandStateManager.setDeviceLocked(km?.isKeyguardLocked ?: true)
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.SCREEN_OFF)
                 return
             }
             if (action == Intent.ACTION_SCREEN_ON) {
@@ -301,24 +406,52 @@ class IslandOverlayService : Service() {
                 IslandStateManager.setDeviceLocked(locked)
                 if (km != null && !locked) {
                     IslandStateManager.triggerUnlockEvent()
+                    fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.SCREEN_UNLOCKED)
                 }
                 return
             }
             if (action == android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED) {
-                if (!currentSettings.showBluetooth) return
-                IslandStateManager.triggerBluetoothEvent()
+                if (currentSettings.showBluetooth) {
+                    IslandStateManager.triggerBluetoothEvent()
+                }
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.BLUETOOTH_CONNECTED)
+                return
+            }
+            if (action == android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED) {
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.BLUETOOTH_DISCONNECTED)
                 return
             }
             if (action == "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED" ||
                 action == "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED" ||
                 action == "android.bluetooth.adapter.action.CONNECTION_STATE_CHANGED"
             ) {
-                if (!currentSettings.showBluetooth) return
                 val state = intent.getIntExtra(android.bluetooth.BluetoothProfile.EXTRA_STATE, -1)
                 if (state == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
-                    IslandStateManager.triggerBluetoothEvent()
+                    if (currentSettings.showBluetooth) {
+                        IslandStateManager.triggerBluetoothEvent()
+                    }
+                    fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.BLUETOOTH_CONNECTED)
+                    return
+                } else if (state == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
+                    fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.BLUETOOTH_DISCONNECTED)
                     return
                 }
+            }
+            if (action == android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION ||
+                action == android.net.ConnectivityManager.CONNECTIVITY_ACTION
+            ) {
+                val cm = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+                val wifiConnected = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                val prev = lastWifiConnectedState
+                lastWifiConnectedState = wifiConnected
+                if (prev != null && prev != wifiConnected) {
+                    fireDeviceEventAutomations(
+                        if (wifiConnected) com.droidbubble.app.tasks.DeviceEventType.WIFI_CONNECTED
+                        else com.droidbubble.app.tasks.DeviceEventType.WIFI_DISCONNECTED
+                    )
+                }
+                return
             }
             if (action == Intent.ACTION_POWER_CONNECTED || action == "android.os.action.CHARGING") {
                 val ctx = context ?: return
@@ -335,6 +468,7 @@ class IslandOverlayService : Service() {
                     IslandStateManager.triggerChargingEvent(pct, wattage)
                 }
                 IslandStateManager.updatePersistentCharging(true, pct, wattage)
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.CHARGING_CONNECTED)
 
                 // Poll charging wattage at 400ms, 1000ms, 1700ms, and 2400ms so fast-charging negotiation updates live
                 serviceScope.launch {
@@ -352,6 +486,7 @@ class IslandOverlayService : Service() {
             }
             if (action == Intent.ACTION_POWER_DISCONNECTED) {
                 IslandStateManager.updatePersistentCharging(false, 0, null)
+                fireDeviceEventAutomations(com.droidbubble.app.tasks.DeviceEventType.CHARGING_DISCONNECTED)
                 return
             }
             if (action == Intent.ACTION_BATTERY_CHANGED) {
@@ -364,8 +499,14 @@ class IslandOverlayService : Service() {
                 } else {
                     100
                 }
+                val prevPct = lastBatteryPercentage
+                lastBatteryPercentage = pct
+                evaluateBatteryThresholdAutomations(prevPct, pct)
+
                 val wattage = BatteryUtils.getChargingWattage(this@IslandOverlayService, intent)
                 IslandStateManager.updatePersistentCharging(isCharging, pct, wattage)
+                com.droidbubble.app.tools.SystemToolsManager.getInstance(this@IslandOverlayService)
+                    .onBatteryChanged(pct, isCharging)
                 return
             }
         }
@@ -498,6 +639,8 @@ class IslandOverlayService : Service() {
         createNotificationChannel()
         initCameraTorch()
         startAutoUpdateChecker()
+        startSystemToolsScheduleChecker()
+        initSystemToolsOverlaysObserver()
 
         persistentTelemetryManager = PersistentWidgetTelemetryManager(this).apply { start(currentSettings) }
 
@@ -532,9 +675,13 @@ class IslandOverlayService : Service() {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
             addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED")
             addAction("android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED")
             addAction("android.bluetooth.adapter.action.CONNECTION_STATE_CHANGED")
+            addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            @Suppress("DEPRECATION")
+            addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction("android.media.INTERNAL_RINGER_MODE_CHANGED_ACTION")
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
@@ -652,16 +799,10 @@ class IslandOverlayService : Service() {
         val chargingEdge = ((currentSettings.widthDp + 20f).coerceAtLeast(156f) + 80f) / 2f
         val totalWidthDp = (maxOf(dualRightEdge, chargingEdge) * 2f).coerceAtLeast(215f)
 
-        val initialWidth = if (shouldShowCompact) {
-            if (currentSettings.isLeftCutout) {
-                WindowManager.LayoutParams.MATCH_PARENT
-            } else {
-                ((totalWidthDp + 2f * kotlin.math.abs(currentSettings.horizontalOffsetDp)) * density).toInt()
-            }
-        } else 1
-        val initialHeight = if (shouldShowCompact) {
-            ((currentSettings.topOffsetDp + currentSettings.heightDp + 12) * density).toInt()
-        } else 1
+        val (compactWidth, compactHeight, compactGravity) = getCompactWindowSpec(density, isLandscape, totalWidthDp)
+        val initialWidth = if (shouldShowCompact) compactWidth else 1
+        val initialHeight = if (shouldShowCompact) compactHeight else 1
+        val initialGravity = if (shouldShowCompact) compactGravity else (Gravity.TOP or Gravity.CENTER_HORIZONTAL)
         val initialFlags = if (isOccupied || hasPersistentWidgets) flags else (flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
 
         val windowType = if (aService != null) {
@@ -680,7 +821,7 @@ class IslandOverlayService : Service() {
             initialFlags,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            gravity = initialGravity
             x = 0
             y = 0
             windowAnimations = 0
@@ -827,6 +968,29 @@ class IslandOverlayService : Service() {
     private var collapseJob: kotlinx.coroutines.Job? = null
     private var wasExpanded = false
 
+    private fun getCompactWindowSpec(density: Float, isLandscape: Boolean, totalWidthDp: Float): Triple<Int, Int, Int> {
+        val thicknessPx = ((currentSettings.topOffsetDp + currentSettings.heightDp + 12) * density).toInt()
+        val spanPx = if (currentSettings.isLeftCutout || currentSettings.isRightCutout) {
+            WindowManager.LayoutParams.MATCH_PARENT
+        } else {
+            ((totalWidthDp + 2f * kotlin.math.abs(currentSettings.horizontalOffsetDp)) * density).toInt()
+        }
+        return if (isLandscape) {
+            val rotation = composeView?.display?.rotation ?: run {
+                @Suppress("DEPRECATION")
+                windowManager?.defaultDisplay?.rotation ?: android.view.Surface.ROTATION_0
+            }
+            val gravity = if (rotation == android.view.Surface.ROTATION_270) {
+                Gravity.RIGHT or Gravity.CENTER_VERTICAL
+            } else {
+                Gravity.LEFT or Gravity.CENTER_VERTICAL
+            }
+            Triple(thicknessPx, spanPx, gravity)
+        } else {
+            Triple(spanPx, thicknessPx, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        }
+    }
+
     private fun applyLayoutParams(
         view: View,
         params: WindowManager.LayoutParams,
@@ -868,7 +1032,7 @@ class IslandOverlayService : Service() {
             IslandStateManager.setDeviceLocked(km.isKeyguardLocked)
         }
         val isDeviceLocked = IslandStateManager.isDeviceLocked.value
-        val allowedInOrientation = currentSettings.isEnabled && (currentSettings.showInLandscape || !isLandscape) && (!currentSettings.hideOnLockScreen || !isDeviceLocked)
+        val allowedInOrientation = currentSettings.isEnabled && (currentSettings.showInLandscape || !isLandscape || expanded) && (!currentSettings.hideOnLockScreen || !isDeviceLocked)
 
         if (!allowedInOrientation) {
             collapseJob?.cancel()
@@ -943,19 +1107,15 @@ class IslandOverlayService : Service() {
                     } else {
                         params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                     }
-                    val compactWindowWidth = if (currentSettings.isLeftCutout) {
-                        WindowManager.LayoutParams.MATCH_PARENT
-                    } else {
-                        ((totalWidthDp + 2f * kotlin.math.abs(currentSettings.horizontalOffsetDp)) * density).toInt()
-                    }
+                    val (compactWindowWidth, compactWindowHeight, compactGravity) = getCompactWindowSpec(density, isLandscape, totalWidthDp)
                     applyLayoutParams(
                         view = view,
                         params = params,
                         width = compactWindowWidth,
-                        height = ((currentSettings.topOffsetDp + currentSettings.heightDp + 12) * density).toInt(),
+                        height = compactWindowHeight,
                         x = 0,
                         y = 0,
-                        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+                        gravity = compactGravity,
                         flags = targetFlags
                     )
                 } else {
@@ -1166,6 +1326,8 @@ class IslandOverlayService : Service() {
 
 override fun onDestroy() {
         removeDroidbar()
+        removePixelGridOverlay()
+        removeLightingOverlay()
         super.onDestroy()
         if (serviceInstance === this) {
             serviceInstance = null
@@ -1186,6 +1348,155 @@ override fun onDestroy() {
     }
 
 
+    private fun initSystemToolsOverlaysObserver() {
+        val toolsManager = com.droidbubble.app.tools.SystemToolsManager.getInstance(applicationContext)
+        serviceScope.launch {
+            toolsManager.batteryPowerConfig.collectLatest { cfg ->
+                if (cfg.pixelGridOverlayEnabled && Settings.canDrawOverlays(this@IslandOverlayService)) {
+                    showOrUpdatePixelGridOverlay(cfg.pixelGridSpacing)
+                } else {
+                    removePixelGridOverlay()
+                }
+            }
+        }
+        serviceScope.launch {
+            toolsManager.activeLightingEvent.collectLatest { event ->
+                if (event != null && Settings.canDrawOverlays(this@IslandOverlayService)) {
+                    ensureLightingOverlayShown()
+                } else if (event == null) {
+                    delay(400L)
+                    if (toolsManager.activeLightingEvent.value == null) {
+                        removeLightingOverlay()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showOrUpdatePixelGridOverlay(spacing: Int) {
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as? WindowManager) ?: return
+        windowManager = wm
+        val existing = pixelGridView
+        if (existing != null) {
+            existing.updateSpacing(spacing)
+            return
+        }
+        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            flags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+            windowAnimations = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        disableMoveAnimation(params)
+
+        val v = com.droidbubble.app.tools.PixelGridOverlayView(this).apply {
+            updateSpacing(spacing)
+        }
+        pixelGridView = v
+        runCatching { wm.addView(v, params) }
+    }
+
+    private fun removePixelGridOverlay() {
+        pixelGridView?.let { v ->
+            runCatching { windowManager?.removeView(v) }
+        }
+        pixelGridView = null
+    }
+
+    private fun ensureLightingOverlayShown() {
+        if (lightingOverlayView != null) return
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as? WindowManager) ?: return
+        windowManager = wm
+
+        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            flags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+            windowAnimations = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        disableMoveAnimation(params)
+
+        val toolsManager = com.droidbubble.app.tools.SystemToolsManager.getInstance(applicationContext)
+        val v = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+            setViewTreeViewModelStoreOwner(lifecycleOwner)
+            fitsSystemWindows = false
+            setContent {
+                val activeEvent by toolsManager.activeLightingEvent.collectAsState()
+                com.droidbubble.app.tools.ActiveNotificationLightingOverlay(event = activeEvent)
+            }
+        }
+        lightingOverlayView = v
+        runCatching { wm.addView(v, params) }
+    }
+
+    private fun removeLightingOverlay() {
+        lightingOverlayView?.let { v ->
+            runCatching { windowManager?.removeView(v) }
+        }
+        lightingOverlayView = null
+    }
+
+    private fun startSystemToolsScheduleChecker() {
+        serviceScope.launch(Dispatchers.Default) {
+            val toolsManager = com.droidbubble.app.tools.SystemToolsManager.getInstance(applicationContext)
+            while (isActive) {
+                runCatching { toolsManager.checkSchedulesNow() }
+                runCatching { evaluateTimeAndDateAutomations() }
+                delay(20_000L)
+            }
+        }
+    }
+
     private fun startAutoUpdateChecker() {
         serviceScope.launch(Dispatchers.IO) {
             delay(15_000L)
@@ -1199,6 +1510,12 @@ override fun onDestroy() {
                     }
                 } catch (e: Exception) {
                     Log.w("IslandOverlayService", "Auto-update check encountered error", e)
+                }
+                try {
+                    com.droidbubble.app.updates.GithubAppsRepository.getInstance(applicationContext)
+                        .checkAllTrackedAppsForUpdates(sendNotifications = true)
+                } catch (e: Exception) {
+                    Log.w("IslandOverlayService", "Tracked GitHub apps update check encountered error", e)
                 }
                 delay(2 * 60 * 60 * 1000L)
             }

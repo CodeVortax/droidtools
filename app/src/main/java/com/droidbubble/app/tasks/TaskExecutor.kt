@@ -9,6 +9,7 @@ import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
@@ -16,26 +17,302 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import com.droidbubble.app.R
 import com.droidbubble.app.island.IslandStateManager
+import com.droidbubble.app.model.NotificationInfo
 import com.droidbubble.app.service.IslandAccessibilityService
+import com.droidbubble.app.service.NotificationReceiverService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 object TaskExecutor {
 
     fun execute(context: Context, shortcut: TaskShortcut) {
         val appContext = context.applicationContext
+        val repository = TasksRepository.getInstance(appContext)
 
-        // Run chained actions sequentially
-        for (action in shortcut.actions) {
-            executeAction(appContext, action)
-        }
+        CoroutineScope(Dispatchers.Default).launch {
+            delay(100L)
+            val localVars = mutableMapOf<String, String>()
+            executeBlockRange(
+                context = appContext,
+                repository = repository,
+                localVars = localVars,
+                actions = shortcut.actions,
+                startIndex = 0,
+                endIndex = shortcut.actions.size
+            )
 
-        // If option enabled, briefly expand Droidbubble with task icon and checkmark
-        if (shortcut.showInBubble) {
-            IslandStateManager.triggerTaskConfirmation(shortcut.iconName, shortcut.name)
+            if (shortcut.showInBubble) {
+                IslandStateManager.triggerTaskConfirmation(shortcut.iconName, shortcut.name)
+            }
         }
     }
 
-    private fun executeAction(context: Context, action: TaskAction) {
+    private suspend fun executeBlockRange(
+        context: Context,
+        repository: TasksRepository,
+        localVars: MutableMap<String, String>,
+        actions: List<TaskAction>,
+        startIndex: Int,
+        endIndex: Int
+    ) {
+        var i = startIndex
+        while (i < endIndex) {
+            val action = actions[i]
+            when (action) {
+                is TaskAction.RepeatStart -> {
+                    val matchEnd = findMatchingRepeatEnd(actions, i, endIndex)
+                    val repeatCount = resolveNumber(action.countExpression, localVars, repository)
+                        .roundToInt()
+                        .coerceIn(0, 1000)
+
+                    if (matchEnd > i) {
+                        for (iteration in 0 until repeatCount) {
+                            localVars["index"] = iteration.toString()
+                            localVars["iteration"] = (iteration + 1).toString()
+                            executeBlockRange(
+                                context = context,
+                                repository = repository,
+                                localVars = localVars,
+                                actions = actions,
+                                startIndex = i + 1,
+                                endIndex = matchEnd
+                            )
+                        }
+                        i = matchEnd + 1
+                    } else {
+                        // Unmatched RepeatStart: execute body to the end of range
+                        for (iteration in 0 until repeatCount) {
+                            localVars["index"] = iteration.toString()
+                            localVars["iteration"] = (iteration + 1).toString()
+                            executeBlockRange(
+                                context = context,
+                                repository = repository,
+                                localVars = localVars,
+                                actions = actions,
+                                startIndex = i + 1,
+                                endIndex = endIndex
+                            )
+                        }
+                        i = endIndex
+                    }
+                }
+                is TaskAction.RepeatEnd -> {
+                    i++
+                }
+                else -> {
+                    executeSingleAction(context, repository, localVars, action)
+                    if (action !is TaskAction.WaitBlock &&
+                        action !is TaskAction.SetVariable &&
+                        action !is TaskAction.AddToVariable &&
+                        action !is TaskAction.MathOperation
+                    ) {
+                        delay(80L)
+                    }
+                    i++
+                }
+            }
+        }
+    }
+
+    private fun findMatchingRepeatEnd(actions: List<TaskAction>, repeatStartIndex: Int, limitIndex: Int): Int {
+        var depth = 0
+        for (idx in repeatStartIndex until limitIndex) {
+            when (actions[idx]) {
+                is TaskAction.RepeatStart -> depth++
+                is TaskAction.RepeatEnd -> {
+                    depth--
+                    if (depth == 0) return idx
+                }
+                else -> {}
+            }
+        }
+        return -1
+    }
+
+    private fun getVariableValue(name: String, localVars: Map<String, String>, repository: TasksRepository): String {
+        val key = name.trim().removePrefix("{").removeSuffix("}").removePrefix("$").trim()
+        if (localVars.containsKey(key)) {
+            return localVars[key] ?: "0"
+        }
+        return repository.getGlobalVariable(key)
+    }
+
+    private fun setVariableValue(
+        name: String,
+        value: String,
+        scope: VariableScope,
+        localVars: MutableMap<String, String>,
+        repository: TasksRepository
+    ) {
+        val key = name.trim().removePrefix("{").removeSuffix("}").removePrefix("$").trim()
+        if (key.isEmpty()) return
+        when (scope) {
+            VariableScope.LOCAL -> localVars[key] = value
+            VariableScope.GLOBAL -> repository.setGlobalVariable(key, value)
+        }
+    }
+
+    private fun interpolateText(text: String, localVars: Map<String, String>, repository: TasksRepository): String {
+        var result = text
+        val braceRegex = Regex("\\{([A-Za-z0-9_]+)\\}")
+        result = braceRegex.replace(result) { match ->
+            val varName = match.groupValues[1]
+            getVariableValue(varName, localVars, repository)
+        }
+        val dollarRegex = Regex("\\$([A-Za-z0-9_]+)")
+        result = dollarRegex.replace(result) { match ->
+            val varName = match.groupValues[1]
+            getVariableValue(varName, localVars, repository)
+        }
+        return result
+    }
+
+    private fun resolveNumber(expr: String, localVars: Map<String, String>, repository: TasksRepository): Double {
+        val trimmed = expr.trim()
+        if (trimmed.isEmpty()) return 0.0
+        trimmed.toDoubleOrNull()?.let { return it }
+        val interpolated = interpolateText(trimmed, localVars, repository).trim()
+        interpolated.toDoubleOrNull()?.let { return it }
+        val directVal = getVariableValue(trimmed, localVars, repository)
+        return directVal.toDoubleOrNull() ?: 0.0
+    }
+
+    private fun formatNumber(value: Double): String {
+        if (!value.isFinite()) return "0"
+        val rounded = value.roundToLong()
+        return if (abs(value - rounded.toDouble()) < 1e-6) {
+            rounded.toString()
+        } else {
+            String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
+        }
+    }
+
+    private suspend fun executeSingleAction(
+        context: Context,
+        repository: TasksRepository,
+        localVars: MutableMap<String, String>,
+        action: TaskAction
+    ) {
         when (action) {
+            is TaskAction.SetVariable -> {
+                val resolved = if (action.value.trim().toDoubleOrNull() != null) {
+                    action.value.trim()
+                } else {
+                    val interp = interpolateText(action.value, localVars, repository)
+                    interp
+                }
+                setVariableValue(action.name, resolved, action.scope, localVars, repository)
+            }
+            is TaskAction.AddToVariable -> {
+                val key = action.name.trim().removePrefix("{").removeSuffix("}").removePrefix("$").trim()
+                val currentNum = when (action.scope) {
+                    VariableScope.LOCAL -> (localVars[key] ?: repository.getGlobalVariable(key)).toDoubleOrNull() ?: 0.0
+                    VariableScope.GLOBAL -> repository.getGlobalVariable(key).toDoubleOrNull() ?: 0.0
+                }
+                val delta = resolveNumber(action.amount, localVars, repository)
+                val updated = formatNumber(currentNum + delta)
+                setVariableValue(key, updated, action.scope, localVars, repository)
+            }
+            is TaskAction.MathOperation -> {
+                val left = resolveNumber(action.leftOperand, localVars, repository)
+                val right = resolveNumber(action.rightOperand, localVars, repository)
+                val result = when (action.operator) {
+                    MathOperator.ADD -> left + right
+                    MathOperator.SUBTRACT -> left - right
+                    MathOperator.MULTIPLY -> left * right
+                    MathOperator.DIVIDE -> if (abs(right) < 1e-9) 0.0 else left / right
+                    MathOperator.MODULO -> if (abs(right) < 1e-9) 0.0 else left % right
+                }
+                setVariableValue(
+                    name = action.targetVar,
+                    value = formatNumber(result),
+                    scope = action.targetScope,
+                    localVars = localVars,
+                    repository = repository
+                )
+            }
+            is TaskAction.WaitBlock -> {
+                val rawDuration = resolveNumber(action.durationValue, localVars, repository).coerceAtLeast(0.0)
+                val delayMs = if (action.isMilliseconds) {
+                    rawDuration.roundToLong()
+                } else {
+                    (rawDuration * 1000.0).roundToLong()
+                }
+                delay(delayMs.coerceIn(0L, 300_000L))
+            }
+            is TaskAction.LiveProgressNotification -> {
+                runCatching {
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+                    val channelId = "droidtools_tasks_live_progress"
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val channel = NotificationChannel(
+                            channelId,
+                            "Tasks Live Progress",
+                            NotificationManager.IMPORTANCE_LOW
+                        ).apply {
+                            description = "Live progress notifications triggered and updated by Tasks"
+                            setSound(null, null)
+                            enableVibration(false)
+                        }
+                        nm.createNotificationChannel(channel)
+                    }
+
+                    val currentProgress = resolveNumber(action.currentValue, localVars, repository).roundToInt().coerceAtLeast(0)
+                    val maxProgress = resolveNumber(action.maxValue, localVars, repository).roundToInt().coerceAtLeast(1)
+                    val clampedProgress = currentProgress.coerceIn(0, maxProgress)
+
+                    val resolvedTitle = interpolateText(action.title.ifBlank { "Progress" }, localVars, repository)
+                    val resolvedText = interpolateText(
+                        action.text.ifBlank { "$clampedProgress / $maxProgress" },
+                        localVars,
+                        repository
+                    )
+
+                    val notifKey = "task_live_progress_${action.notificationId.ifBlank { "default" }}"
+                    val notifId = 80000 + (abs(notifKey.hashCode()) % 10000)
+
+                    if (action.dismissWhenComplete && clampedProgress >= maxProgress) {
+                        nm.cancel(notifId)
+                        IslandStateManager.removeNotification(notifKey)
+                        return
+                    }
+
+                    val isOngoing = clampedProgress < maxProgress
+                    val notif = NotificationCompat.Builder(context, channelId)
+                        .setSmallIcon(R.drawable.ic_notification_island)
+                        .setContentTitle(resolvedTitle)
+                        .setContentText(resolvedText)
+                        .setProgress(maxProgress, clampedProgress, false)
+                        .setOngoing(isOngoing)
+                        .setOnlyAlertOnce(true)
+                        .setPriority(NotificationCompat.PRIORITY_LOW)
+                        .setAutoCancel(!isOngoing)
+                        .build()
+
+                    nm.notify(notifId, notif)
+
+                    // Also update Droidbubble Island live progress directly so it shows smoothly in the island!
+                    IslandStateManager.updateProgress(
+                        NotificationInfo(
+                            key = notifKey,
+                            packageName = context.packageName,
+                            appName = "Droidtools",
+                            title = resolvedTitle,
+                            text = resolvedText,
+                            progress = clampedProgress,
+                            maxProgress = maxProgress,
+                            isIndeterminate = false,
+                            isOngoing = isOngoing
+                        )
+                    )
+                }
+            }
             is TaskAction.OpenApp -> {
                 runCatching {
                     val intent = context.packageManager.getLaunchIntentForPackage(action.packageName)?.apply {
@@ -176,15 +453,22 @@ object TaskExecutor {
             }
             is TaskAction.SetBrightness -> {
                 runCatching {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.System.canWrite(context)) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (Settings.System.canWrite(context)) {
+                            val brightness = (action.level * 255 / 100).coerceIn(0, 255)
+                            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+                        } else {
+                            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
+                    } else {
                         val brightness = (action.level * 255 / 100).coerceIn(0, 255)
                         Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                         Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
-                    } else {
-                        val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
                     }
                 }
             }
@@ -270,16 +554,85 @@ object TaskExecutor {
                         }
                         nm.createNotificationChannel(channel)
                     }
+                    val resolvedTitle = interpolateText(action.title.ifBlank { "Task Notification" }, localVars, repository)
+                    val resolvedText = interpolateText(action.text.ifBlank { "Task executed" }, localVars, repository)
                     val notif = NotificationCompat.Builder(context, channelId)
                         .setSmallIcon(R.drawable.ic_notification_island)
-                        .setContentTitle(action.title.ifBlank { "Task Notification" })
-                        .setContentText(action.text.ifBlank { "Task executed" })
+                        .setContentTitle(resolvedTitle)
+                        .setContentText(resolvedText)
                         .setPriority(NotificationCompat.PRIORITY_HIGH)
                         .setAutoCancel(true)
                         .build()
                     nm.notify((System.currentTimeMillis() % 100000).toInt(), notif)
                 }
             }
+            is TaskAction.RemoveNotification -> {
+                runCatching {
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                    val resolvedTarget = interpolateText(action.targetTagOrTitle, localVars, repository).trim()
+                    val queryLower = resolvedTarget.lowercase()
+
+                    if (action.removeAll || resolvedTarget.isBlank()) {
+                        // Cancel all active notifications posted by this app (excluding the persistent FGS notification id=1001)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
+                            nm.activeNotifications?.forEach { sbn ->
+                                if (sbn.id != 1001) {
+                                    nm.cancel(sbn.tag, sbn.id)
+                                }
+                            }
+                        }
+                        IslandStateManager.activeProgress.value?.let { prog ->
+                            IslandStateManager.removeNotification(prog.key)
+                        }
+                        IslandStateManager.dismissCurrentNotification()
+                        NotificationReceiverService.instance?.cancelMatchingNotifications("", true)
+                    } else {
+                        // 1. Cancel matching LiveProgressNotification by exact tag ID
+                        val notifKey = "task_live_progress_$resolvedTarget"
+                        val notifId = 80000 + (abs(notifKey.hashCode()) % 10000)
+                        nm?.cancel(notifId)
+                        IslandStateManager.removeNotification(notifKey)
+
+                        // Also check if user passed "default" or if any active app notification matches
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
+                            nm.activeNotifications?.forEach { sbn ->
+                                if (sbn.id != 1001) {
+                                    val extras = sbn.notification?.extras
+                                    val title = extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()?.lowercase() ?: ""
+                                    val text = extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()?.lowercase() ?: ""
+                                    if (title.contains(queryLower) || text.contains(queryLower) || sbn.id == notifId) {
+                                        nm.cancel(sbn.tag, sbn.id)
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Remove from IslandStateManager if activeProgress or activeNotification matches
+                        IslandStateManager.activeProgress.value?.let { prog ->
+                            if (prog.key.lowercase().contains(queryLower) ||
+                                prog.title.lowercase().contains(queryLower) ||
+                                prog.text.lowercase().contains(queryLower) ||
+                                prog.appName.lowercase().contains(queryLower)
+                            ) {
+                                IslandStateManager.removeNotification(prog.key)
+                            }
+                        }
+                        IslandStateManager.activeNotification.value?.let { notif ->
+                            if (notif.key.lowercase().contains(queryLower) ||
+                                notif.title.lowercase().contains(queryLower) ||
+                                notif.text.lowercase().contains(queryLower) ||
+                                notif.appName.lowercase().contains(queryLower)
+                            ) {
+                                IslandStateManager.removeNotification(notif.key)
+                            }
+                        }
+
+                        // 3. Cancel matching system notifications via NotificationReceiverService
+                        NotificationReceiverService.instance?.cancelMatchingNotifications(resolvedTarget, false)
+                    }
+                }
+            }
+            is TaskAction.RepeatStart, is TaskAction.RepeatEnd -> {}
         }
     }
 }

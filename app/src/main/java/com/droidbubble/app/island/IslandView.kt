@@ -33,6 +33,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -514,13 +516,15 @@ fun IslandOverlayRoot(
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val allowInOrientation = settings.isEnabled && (settings.showInLandscape || !isLandscape) && (!settings.hideOnLockScreen || !isDeviceLocked)
+    val allowInOrientation = settings.isEnabled && (settings.showInLandscape || !isLandscape || isExpanded) && (!settings.hideOnLockScreen || !isDeviceLocked)
 
     if (!allowInOrientation || !settings.isEnabled) {
         return@CompositionLocalProvider
     }
 
     val currentMedia = media
+    val currentLyrics by LyricsManager.currentLyrics.collectAsState()
+    val hasAvailableLyrics = settings.showMediaLyrics && currentLyrics.isNotEmpty()
     val currentNotif = notification
     val currentProgress = progressNotification
     val mediaArt = currentMedia?.albumArt ?: currentMedia?.appIcon
@@ -1035,16 +1039,57 @@ fun IslandOverlayRoot(
     val isWeatherActive = isWeather && primaryPriority == IslandPriority.WEATHER
     val isNetworkSpeedActive = isNetworkSpeed && primaryPriority == IslandPriority.NETWORK_SPEED
 
-    val callIslandWidth = (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(116.dp, 190.dp) + (teardropEarRadius * 2f)
-    val recordingIslandWidth = (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(116.dp, 190.dp) + (teardropEarRadius * 2f)
-    val chargingIslandWidth = (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(156.dp, 215.dp) + (teardropEarRadius * 2f)
-    val unlockIslandWidth = (settings.widthDp * 0.82f).dp.coerceAtLeast(96.dp) + (teardropEarRadius * 2f)
-    val ringerIslandWidth = (110.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
-    val airplaneIslandWidth = (105.dp + (settings.widthDp * 0.35f).dp).coerceIn(148.dp, 200.dp) + (teardropEarRadius * 2f)
-    val taskConfirmationIslandWidth = (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
-    val fpsIslandWidth = (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(120.dp, 195.dp) + (teardropEarRadius * 2f)
-    val weatherIslandWidth = (70.dp + (settings.widthDp * 0.35f).dp).coerceIn(102.dp, 185.dp) + (teardropEarRadius * 2f)
-    val networkSpeedIslandWidth = (85.dp + (settings.widthDp * 0.35f).dp).coerceIn(132.dp, 205.dp) + (teardropEarRadius * 2f)
+    val isSideCutout = settings.isLeftCutout || settings.isRightCutout
+    val callIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(104.dp, 190.dp)
+    } else {
+        (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(116.dp, 190.dp) + (teardropEarRadius * 2f)
+    }
+    val recordingIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(98.dp, 190.dp)
+    } else {
+        (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(116.dp, 190.dp) + (teardropEarRadius * 2f)
+    }
+    val chargingIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(124.dp, 215.dp)
+    } else {
+        (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(156.dp, 215.dp) + (teardropEarRadius * 2f)
+    }
+    val unlockIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(94.dp, 180.dp)
+    } else {
+        (settings.widthDp * 0.82f).dp.coerceAtLeast(96.dp) + (teardropEarRadius * 2f)
+    }
+    val ringerIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(114.dp, 200.dp)
+    } else {
+        (110.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
+    }
+    val airplaneIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(98.dp, 190.dp)
+    } else {
+        (105.dp + (settings.widthDp * 0.35f).dp).coerceIn(148.dp, 200.dp) + (teardropEarRadius * 2f)
+    }
+    val taskConfirmationIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(96.dp, 190.dp)
+    } else {
+        (115.dp + (settings.widthDp * 0.35f).dp).coerceIn(150.dp, 205.dp) + (teardropEarRadius * 2f)
+    }
+    val fpsIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(90.dp, 190.dp)
+    } else {
+        (75.dp + (settings.widthDp * 0.35f).dp).coerceIn(120.dp, 195.dp) + (teardropEarRadius * 2f)
+    }
+    val weatherIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(90.dp, 185.dp)
+    } else {
+        (70.dp + (settings.widthDp * 0.35f).dp).coerceIn(102.dp, 185.dp) + (teardropEarRadius * 2f)
+    }
+    val networkSpeedIslandWidth = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(116.dp, 205.dp)
+    } else {
+        (85.dp + (settings.widthDp * 0.35f).dp).coerceIn(132.dp, 205.dp) + (teardropEarRadius * 2f)
+    }
 
     val minDualCenter = when (compactPrimaryPriority) {
         IslandPriority.NETWORK_SPEED -> 114.dp
@@ -1056,21 +1101,22 @@ fun IslandOverlayRoot(
         else -> 96.dp
     }
     val minDualLeft = when (compactPrimaryPriority) {
-        IslandPriority.NETWORK_SPEED -> 146.dp
-        IslandPriority.FPS -> 140.dp
-        IslandPriority.CHARGING -> 138.dp
-        IslandPriority.CALL, IslandPriority.SCREEN_RECORDING -> 138.dp
-        IslandPriority.WEATHER -> 134.dp
-        IslandPriority.ALARM -> 136.dp
-        else -> 132.dp
+        IslandPriority.NETWORK_SPEED -> 116.dp
+        IslandPriority.CHARGING -> 120.dp
+        IslandPriority.CALL -> 104.dp
+        IslandPriority.SCREEN_RECORDING -> 98.dp
+        IslandPriority.FPS -> 90.dp
+        IslandPriority.WEATHER -> 90.dp
+        IslandPriority.ALARM -> 98.dp
+        else -> 92.dp
     }
 
     val bubbleSize = settings.heightDp.dp
-    val dualMainShiftLeft = if (!settings.isLeftCutout) (-1).dp else 0.dp
+    val dualMainShiftLeft = if (!isSideCutout) (-1).dp else 0.dp
     // Dual activity compact main pill width: clamped at a safe squash floor individually tailored per indicator
     // so indicators like call timer, recording timer, fps, weather, and wifi speed never get squashed.
-    val compactMainFull = if (settings.isLeftCutout) {
-        (settings.widthDp * 0.76f).dp.coerceIn(minDualLeft, 160.dp)
+    val compactMainFull = if (isSideCutout) {
+        settings.widthDp.dp.coerceIn(minDualLeft, 160.dp)
     } else {
         (settings.widthDp * 0.53f).dp.coerceIn(minDualCenter, 120.dp)
     }
@@ -1093,14 +1139,29 @@ fun IslandOverlayRoot(
         isNetworkSpeedActive -> networkSpeedIslandWidth
         isFpsActive -> fpsIslandWidth
         isWeatherActive -> weatherIslandWidth
-        isOccupied || hasPersistent -> settings.widthDp.dp.coerceAtLeast(80.dp) + (teardropEarRadius * 2f)
-        else -> settings.widthDp.dp.coerceAtLeast(80.dp) + (teardropEarRadius * 2f)
+        isOccupied || hasPersistent -> {
+            if (isSideCutout) {
+                val minWidth = if (primaryPriority == IslandPriority.MEDIA) 92.dp else settings.heightDp.dp
+                settings.widthDp.dp.coerceAtLeast(minWidth)
+            } else {
+                settings.widthDp.dp.coerceAtLeast(80.dp) + (teardropEarRadius * 2f)
+            }
+        }
+        else -> {
+            if (isSideCutout) {
+                settings.widthDp.dp.coerceAtLeast(settings.heightDp.dp)
+            } else {
+                settings.widthDp.dp.coerceAtLeast(80.dp) + (teardropEarRadius * 2f)
+            }
+        }
     }
 
     // Expanded Cards: Card 1 (and Card 2 if dual mode).
     // When expanded, Card 1 slides down to (settings.topOffsetDp + 52).dp, widening to 340.dp * scale.
     // When minimising, Card 1 shrinks back to 0.dp width (transitioning into the small circle at the punch hole) as it slides back up.
-    val screenWidth = configuration.screenWidthDp.dp
+    val portraitScreenWidthDp = minOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
+    val portraitScreenHeightDp = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
+    val screenWidth = portraitScreenWidthDp
     val targetCard1Width = if (isExpanded && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation) {
         (340.dp * settings.expandedScale).coerceAtMost(screenWidth - 16.dp)
     } else {
@@ -1116,11 +1177,13 @@ fun IslandOverlayRoot(
         else -> 144.dp + notifExtraHeight
     }
 
+    val mediaExtraLyricsHeight = if (hasAvailableLyrics) (24.dp * settings.expandedScale) else 0.dp
     val targetCard1Height = when {
         isExpanded && (primaryPriority == IslandPriority.SCREEN_RECORDING || primaryPriority == IslandPriority.CALL || primaryPriority == IslandPriority.FPS || primaryPriority == IslandPriority.WEATHER || primaryPriority == IslandPriority.NETWORK_SPEED || primaryPriority == IslandPriority.CHARGING || primaryPriority == IslandPriority.ALARM) -> (78.dp * settings.expandedScale).coerceAtLeast(68.dp)
         isExpanded && primaryPriority == IslandPriority.PROGRESS -> (84.dp * settings.expandedScale).coerceAtLeast(74.dp)
         isExpanded && primaryPriority == IslandPriority.POP_NOTIFICATION -> (notifBaseHeight * settings.expandedScale).coerceAtLeast(136.dp)
         isExpanded && primaryPriority == IslandPriority.FLASHLIGHT -> if (settings.designLanguage == DesignLanguage.MATERIAL3) (74.dp * settings.expandedScale).coerceAtLeast(60.dp) else (205.dp * settings.expandedScale).coerceAtLeast(165.dp)
+        isExpanded && primaryPriority == IslandPriority.MEDIA -> ((195.dp * settings.expandedScale) + mediaExtraLyricsHeight).coerceAtLeast(155.dp)
         isExpanded -> (195.dp * settings.expandedScale).coerceAtLeast(155.dp)
         else -> settings.heightDp.dp
     }
@@ -1157,6 +1220,7 @@ fun IslandOverlayRoot(
             IslandPriority.PROGRESS -> 84.dp
             IslandPriority.POP_NOTIFICATION -> notifBaseHeight
             IslandPriority.FLASHLIGHT -> if (settings.designLanguage == DesignLanguage.MATERIAL3) 74.dp else 205.dp
+            IslandPriority.MEDIA -> if (hasAvailableLyrics) 202.dp else 180.dp
             else -> 180.dp
         }
         val minH = when (priority) {
@@ -1189,7 +1253,7 @@ fun IslandOverlayRoot(
     val targetCard3Alpha = if (card3Expanded && showTertiaryCard) 1f else 0f
     val targetCard3OffsetY = if (card3Expanded && showTertiaryCard) 0.dp else (-14).dp
 
-    val targetDualMainShiftX = if (!isCharging && !isUnlock && !isBluetooth && !isRingerMode && isCompactDual && !isExpanded && !settings.isLeftCutout && !isSwapMerging) {
+    val targetDualMainShiftX = if (!isCharging && !isUnlock && !isBluetooth && !isRingerMode && isCompactDual && !isExpanded && !isSideCutout && !isSwapMerging) {
         -dualMainShiftLeft
     } else {
         0.dp
@@ -1200,7 +1264,7 @@ fun IslandOverlayRoot(
         label = "dualMainShiftX"
     )
     val bubbleGap = 5.dp
-    val restingBubbleCenterX = if (settings.isLeftCutout) {
+    val restingBubbleCenterX = if (isSideCutout) {
         compactMainFull + bubbleGap + (bubbleSize / 2f)
     } else {
         (compactMainHalf - dualMainShiftLeft) + bubbleGap + (bubbleSize / 2f)
@@ -1220,7 +1284,7 @@ fun IslandOverlayRoot(
 
     val targetBubbleOffsetX = when {
         secondaryBubbleEmerged && shouldEmergeSecondary -> restingBubbleCenterX
-        settings.isLeftCutout -> bubbleSize / 2f
+        isSideCutout -> bubbleSize / 2f
         else -> 0.dp
     }
 
@@ -1237,16 +1301,21 @@ fun IslandOverlayRoot(
     }
 
     val leftCutoutAnchorCenterX = (-screenWidth / 2f) + 28.dp + settings.horizontalOffsetDp.dp
+    val rightCutoutAnchorCenterX = (screenWidth / 2f) - 28.dp + settings.horizontalOffsetDp.dp
     val targetHorizontalOffset = if (isExpanded && !isCharging && !isUnlock && !isBluetooth && !isRingerMode) {
         0.dp
     } else if (settings.isLeftCutout) {
         leftCutoutAnchorCenterX
+    } else if (settings.isRightCutout) {
+        rightCutoutAnchorCenterX
     } else {
         settings.horizontalOffsetDp.dp
     }
 
     val targetTopOffset = if (isExpanded && !isCharging && !isUnlock && !isBluetooth && !isRingerMode) {
-        if (settings.isTeardropCutout) {
+        if (isLandscape) {
+            16.dp // Upright landscape top margin
+        } else if (settings.isTeardropCutout) {
             (settings.topOffsetDp + 44).dp
         } else {
             (settings.topOffsetDp + 52).dp // Sits way below initial position (comfortably below status bar) when expanded!
@@ -1376,31 +1445,24 @@ fun IslandOverlayRoot(
     } else Modifier
 
     val screenDensity = LocalDensity.current.density
-    // Outer container: full touch bounds when expanded to capture outside tap, or exact bounds when minimised
+    val displayRotation = remember(configuration) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                view.display?.rotation ?: android.view.Surface.ROTATION_0
+            } else {
+                val wm = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+                @Suppress("DEPRECATION")
+                wm?.defaultDisplay?.rotation ?: android.view.Surface.ROTATION_0
+            }
+        }.getOrDefault(android.view.Surface.ROTATION_0)
+    }
+    val isRotated270 = isLandscape && displayRotation == android.view.Surface.ROTATION_270
+
+    // Outer container: full touch bounds when expanded to capture outside tap, or exact bounds when minimised.
+    // When in landscape, locks compact Droidbubble to portrait orientation along the physical top cutout edge,
+    // while expanded cards always display upright in landscape orientation at the top-center of the screen!
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(
-                if (!isExpanded && expandProgress <= 0.05f) {
-                    Modifier.pointerInput(Unit) {
-                        detectVerticalDragGestures { change, dragAmount ->
-                            if (dragAmount > 15f) {
-                                change.consume()
-                                val isRightSide = change.position.x > (screenWidth.value * screenDensity * 0.72f)
-                                if (isRightSide) {
-                                    if (!IslandAccessibilityService.openQuickSettings()) {
-                                        IslandStateManager.expand(primaryPriority)
-                                    }
-                                } else {
-                                    if (!IslandAccessibilityService.openNotificationShade()) {
-                                        IslandStateManager.expand(primaryPriority)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else Modifier
-            ),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
         // Tap outside backdrop when expanded (active during whole expand and collapse animation)
@@ -1418,9 +1480,7 @@ fun IslandOverlayRoot(
             )
         }
 
-
-
-        // Expanded Cards Container: Positioned at animated top and horizontal offset
+        // Expanded Cards Container: Positioned upright at animated top and horizontal offset in both portrait and landscape!
         if (expandProgress > 0.001f || isExpanded) {
             Box(
                 modifier = Modifier
@@ -1730,6 +1790,7 @@ fun IslandOverlayRoot(
                                         scale = settings.expandedScale,
                                         spinningAlbumArt = settings.spinningAlbumArt,
                                         wavyProgressBar = settings.wavyProgressBar,
+                                        showMediaLyrics = settings.showMediaLyrics,
                                         notificationMaxLines = settings.notificationMaxLines,
                                         charging = charging,
                                         designLanguage = settings.designLanguage,
@@ -2007,6 +2068,7 @@ fun IslandOverlayRoot(
                                         scale = settings.expandedScale,
                                         spinningAlbumArt = settings.spinningAlbumArt,
                                         wavyProgressBar = settings.wavyProgressBar,
+                                        showMediaLyrics = settings.showMediaLyrics,
                                         notificationMaxLines = settings.notificationMaxLines,
                                         charging = charging,
                                         designLanguage = settings.designLanguage,
@@ -2282,6 +2344,7 @@ fun IslandOverlayRoot(
                                         scale = settings.expandedScale,
                                         spinningAlbumArt = settings.spinningAlbumArt,
                                         wavyProgressBar = settings.wavyProgressBar,
+                                        showMediaLyrics = settings.showMediaLyrics,
                                         notificationMaxLines = settings.notificationMaxLines,
                                         charging = charging,
                                         designLanguage = settings.designLanguage,
@@ -2306,12 +2369,56 @@ fun IslandOverlayRoot(
             }
         }
 
+        // Camera-locked container for the Minimised Island Pill (rotates to lock to the physical camera cutout in landscape)
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = when {
+                !isLandscape -> Alignment.TopCenter
+                isRotated270 -> Alignment.CenterEnd
+                else -> Alignment.CenterStart
+            }
+        ) {
+        Box(
+            modifier = (if (isLandscape) {
+                val deltaDp = (portraitScreenHeightDp - portraitScreenWidthDp) / 2f
+                Modifier
+                    .requiredSize(width = portraitScreenWidthDp, height = portraitScreenHeightDp)
+                    .graphicsLayer {
+                        rotationZ = if (isRotated270) 90f else -90f
+                        translationX = if (isRotated270) -deltaDp.toPx() else deltaDp.toPx()
+                    }
+            } else {
+                Modifier.fillMaxSize()
+            })
+                .then(
+                    if (!isExpanded && expandProgress <= 0.05f) {
+                        Modifier.pointerInput(Unit) {
+                            detectVerticalDragGestures { change, dragAmount ->
+                                if (dragAmount > 15f) {
+                                    change.consume()
+                                    val isRightSide = change.position.x > (screenWidth.value * screenDensity * 0.72f)
+                                    if (isRightSide) {
+                                        if (!IslandAccessibilityService.openQuickSettings()) {
+                                            IslandStateManager.expand(primaryPriority)
+                                        }
+                                    } else {
+                                        if (!IslandAccessibilityService.openNotificationShade()) {
+                                            IslandStateManager.expand(primaryPriority)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else Modifier
+                ),
+            contentAlignment = Alignment.TopCenter
+        ) {
         // Minimised Island Container: Positioned strictly at camera cutout level (settings.topOffsetDp.dp, or 0.dp in Tear-drop mode)
         // Shrinks horizontally to 0 width while the card expands downwards, and blossoms from 0 width when minimising!
-        val compactContainerOffsetX = if (settings.isLeftCutout) {
-            leftCutoutAnchorCenterX
-        } else {
-            animatedHorizontalOffset
+        val compactContainerOffsetX = when {
+            settings.isLeftCutout -> leftCutoutAnchorCenterX
+            settings.isRightCutout -> rightCutoutAnchorCenterX
+            else -> animatedHorizontalOffset
         }
         val compactContainerOffsetY = if (settings.isTeardropCutout) {
             0.dp
@@ -2343,10 +2450,10 @@ fun IslandOverlayRoot(
             // 1. Auxiliary Circular Island Bubble: Placed on the LAYER BELOW (rendered first so main pill covers it!)
             // Fixed circular shape & size; emerges and retracts purely along the X axis from the punch hole
             if (isCompactDual || animatedBubbleOffsetX > 1.dp) {
-                val bubbleCenterRelativeToAnchor = if (settings.isLeftCutout) {
-                    animatedBubbleOffsetX - (bubbleSize / 2f)
-                } else {
-                    animatedBubbleOffsetX
+                val bubbleCenterRelativeToAnchor = when {
+                    settings.isLeftCutout -> animatedBubbleOffsetX - (bubbleSize / 2f)
+                    settings.isRightCutout -> -(animatedBubbleOffsetX - (bubbleSize / 2f))
+                    else -> animatedBubbleOffsetX
                 }
                 val bubbleOffsetXPx = with(LocalDensity.current) { bubbleCenterRelativeToAnchor.roundToPx() }
                 val bubbleOffsetYPx = with(LocalDensity.current) {
@@ -2368,7 +2475,7 @@ fun IslandOverlayRoot(
                 val bubbleAlpha = baseBubbleAlpha * compactPillAlpha
 
                 if (bubbleAlpha > 0.01f) {
-                    val mainRightEdgeFromOrigin = if (settings.isLeftCutout) compactMainFull else (compactMainHalf + animatedDualMainShiftX)
+                    val mainRightEdgeFromOrigin = if (isSideCutout) compactMainFull else (compactMainHalf + animatedDualMainShiftX)
                     val emergedDistance = animatedBubbleOffsetX - (mainRightEdgeFromOrigin - bubbleSize / 2f)
                     val contentAlpha = ((emergedDistance - bubbleSize * 0.35f) / (bubbleSize * 0.55f)).coerceIn(0f, 1f) * bubbleAlpha
 
@@ -2461,10 +2568,10 @@ fun IslandOverlayRoot(
             // 2. Main Compact Pill: Rendered on top of the bubble (covers it when sliding near x = 0)
             if (animatedCompactWidth > 0.5.dp) {
                 val mainPillOffsetXPx = with(LocalDensity.current) {
-                    if (settings.isLeftCutout) {
-                        ((animatedCompactWidth - settings.heightDp.dp) / 2f).roundToPx()
-                    } else {
-                        animatedDualMainShiftX.roundToPx()
+                    when {
+                        settings.isLeftCutout -> ((animatedCompactWidth - settings.heightDp.dp) / 2f).roundToPx()
+                        settings.isRightCutout -> -((animatedCompactWidth - settings.heightDp.dp) / 2f).roundToPx()
+                        else -> animatedDualMainShiftX.roundToPx()
                     }
                 }
                 val compactPillShape: Shape = if (settings.isTeardropCutout) {
@@ -2622,20 +2729,30 @@ fun IslandOverlayRoot(
                         } else {
                             "Charging"
                         }
-                        val mintChargingGreen = Color(0xFF7CE8A0)
+                        val isM3 = settings.designLanguage == DesignLanguage.MATERIAL3
+                        val chargingAccent = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFF7CE8A0)
+                        val chargingTextColor = if (isM3) MaterialTheme.colorScheme.onSurface else Color.White
+                        val chargingBoltTint = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFFB8FFD0)
+                        val chargingBoltGlow = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFF7CE8A0)
 
-                        if (settings.isLeftCutout) {
+                        if (settings.isLeftCutout || settings.isRightCutout) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(start = 38.dp, end = 10.dp)
+                                    .padding(
+                                        start = if (settings.isLeftCutout) 38.dp else 10.dp,
+                                        end = if (settings.isRightCutout) 38.dp else 10.dp
+                                    )
                                     .graphicsLayer { alpha = chargingContentAlpha },
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                                horizontalArrangement = Arrangement.spacedBy(
+                                    8.dp,
+                                    if (settings.isLeftCutout) Alignment.End else Alignment.Start
+                                )
                             ) {
                                 Text(
                                     text = chargingLabel,
-                                    color = Color.White,
+                                    color = chargingTextColor,
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -2648,7 +2765,7 @@ fun IslandOverlayRoot(
                                 ) {
                                     Text(
                                         text = "${charging?.percentage ?: 100}%",
-                                        color = mintChargingGreen,
+                                        color = chargingAccent,
                                         fontSize = 13.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
@@ -2665,8 +2782,8 @@ fun IslandOverlayRoot(
                                                 .background(
                                                     Brush.radialGradient(
                                                         colors = listOf(
-                                                            mintChargingGreen.copy(alpha = 0.52f),
-                                                            mintChargingGreen.copy(alpha = 0.20f),
+                                                            chargingBoltGlow.copy(alpha = 0.52f),
+                                                            chargingBoltGlow.copy(alpha = 0.20f),
                                                             Color.Transparent
                                                         )
                                                     ),
@@ -2676,7 +2793,7 @@ fun IslandOverlayRoot(
                                         Icon(
                                             imageVector = Icons.Default.Bolt,
                                             contentDescription = "Charging",
-                                            tint = Color(0xFFB8FFD0),
+                                            tint = chargingBoltTint,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -2697,7 +2814,7 @@ fun IslandOverlayRoot(
                                 ) {
                                     Text(
                                         text = chargingLabel,
-                                        color = Color.White,
+                                        color = chargingTextColor,
                                         fontSize = 13.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
@@ -2719,7 +2836,7 @@ fun IslandOverlayRoot(
                                     ) {
                                         Text(
                                             text = "${charging?.percentage ?: 100}%",
-                                            color = mintChargingGreen,
+                                            color = chargingAccent,
                                             fontSize = 13.5.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
@@ -2736,8 +2853,8 @@ fun IslandOverlayRoot(
                                                     .background(
                                                         Brush.radialGradient(
                                                             colors = listOf(
-                                                                mintChargingGreen.copy(alpha = 0.52f),
-                                                                mintChargingGreen.copy(alpha = 0.20f),
+                                                                chargingBoltGlow.copy(alpha = 0.52f),
+                                                                chargingBoltGlow.copy(alpha = 0.20f),
                                                                 Color.Transparent
                                                             )
                                                         ),
@@ -2747,7 +2864,7 @@ fun IslandOverlayRoot(
                                             Icon(
                                                 imageVector = Icons.Default.Bolt,
                                                 contentDescription = "Charging",
-                                                tint = Color(0xFFB8FFD0),
+                                                tint = chargingBoltTint,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -2756,26 +2873,33 @@ fun IslandOverlayRoot(
                             }
                         }
                     } else if (isUnlock || unlockContentAlpha > 0.01f) {
-                        if (settings.isLeftCutout) {
+                        val unlockIconTint = if (settings.designLanguage == DesignLanguage.MATERIAL3) MaterialTheme.colorScheme.primary else Color.White
+                        if (settings.isLeftCutout || settings.isRightCutout) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(start = 38.dp, end = 12.dp)
+                                    .padding(
+                                        start = if (settings.isLeftCutout) 38.dp else 12.dp,
+                                        end = if (settings.isRightCutout) 38.dp else 12.dp
+                                    )
                                     .graphicsLayer { alpha = unlockContentAlpha },
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                                horizontalArrangement = Arrangement.spacedBy(
+                                    8.dp,
+                                    if (settings.isLeftCutout) Alignment.End else Alignment.Start
+                                )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.LockOpen,
                                     contentDescription = "Unlocked",
-                                    tint = Color.White,
+                                    tint = unlockIconTint,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 if (unlockCheckmarkAlpha > 0.01f) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Success",
-                                        tint = Color.White,
+                                        tint = unlockIconTint,
                                         modifier = Modifier
                                             .graphicsLayer {
                                                 alpha = unlockCheckmarkAlpha
@@ -2802,7 +2926,7 @@ fun IslandOverlayRoot(
                                     Icon(
                                         imageVector = Icons.Default.LockOpen,
                                         contentDescription = "Unlocked",
-                                        tint = Color.White,
+                                        tint = unlockIconTint,
                                         modifier = Modifier.size(19.dp)
                                     )
                                 }
@@ -2819,7 +2943,7 @@ fun IslandOverlayRoot(
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Success",
-                                            tint = Color.White,
+                                            tint = unlockIconTint,
                                             modifier = Modifier
                                                 .graphicsLayer {
                                                     alpha = unlockCheckmarkAlpha
@@ -2835,38 +2959,46 @@ fun IslandOverlayRoot(
                     } else if (isBluetooth || bluetoothContentAlpha > 0.01f) {
                         BluetoothModePill(
                             isLeftCutout = settings.isLeftCutout,
+                            isRightCutout = settings.isRightCutout,
                             bluetoothContentAlpha = bluetoothContentAlpha,
                             bluetoothCheckmarkAlpha = bluetoothCheckmarkAlpha,
                             bluetoothCheckmarkScale = bluetoothCheckmarkScale,
-                            teardropEarRadius = teardropEarRadius
+                            teardropEarRadius = teardropEarRadius,
+                            designLanguage = settings.designLanguage
                         )
                     } else if (isRingerMode || ringerContentAlpha > 0.01f) {
                         RingerModePill(
                             displayRingerMode = displayRingerMode,
                             isLeftCutout = settings.isLeftCutout,
+                            isRightCutout = settings.isRightCutout,
                             ringerContentAlpha = ringerContentAlpha,
                             ringerSecondaryAlpha = ringerSecondaryAlpha,
                             ringerSecondaryScale = ringerSecondaryScale,
                             bellShakeRotation = bellShakeRotation.value,
                             vibrateShakeOffset = vibrateShakeOffset.value.dp,
-                            teardropEarRadius = teardropEarRadius
+                            teardropEarRadius = teardropEarRadius,
+                            designLanguage = settings.designLanguage
                         )
                     } else if (isAirplaneMode || airplaneContentAlpha > 0.01f) {
                         AirplaneModePill(
                             displayAirplaneMode = displayAirplaneMode,
                             isLeftCutout = settings.isLeftCutout,
+                            isRightCutout = settings.isRightCutout,
                             airplaneContentAlpha = airplaneContentAlpha,
                             airplaneSecondaryAlpha = airplaneSecondaryAlpha,
                             airplaneSecondaryScale = airplaneSecondaryScale,
                             flightProgress = airplaneFlightProgress.value,
-                            teardropEarRadius = teardropEarRadius
+                            teardropEarRadius = teardropEarRadius,
+                            designLanguage = settings.designLanguage
                         )
                     } else if (isTaskConfirmation || taskConfirmationAlpha > 0.01f) {
                         TaskConfirmationPill(
                             confirmation = displayTaskConfirmation,
                             isLeftCutout = settings.isLeftCutout,
+                            isRightCutout = settings.isRightCutout,
                             contentAlpha = taskConfirmationAlpha,
-                            teardropEarRadius = teardropEarRadius
+                            teardropEarRadius = teardropEarRadius,
+                            designLanguage = settings.designLanguage
                         )
                     } else if (compactAlpha > 0.01f && animatedCompactWidth > 24.dp) {
                         Box(
@@ -2883,6 +3015,7 @@ fun IslandOverlayRoot(
                                 activeCall = activeCall,
                                 isCompactDual = isCompactDual,
                                 isLeftCutout = settings.isLeftCutout,
+                                isRightCutout = settings.isRightCutout,
                                 isTeardropCutout = settings.isTeardropCutout,
                                 teardropEarInset = teardropEarRadius,
                                 spinningAlbumArt = settings.spinningAlbumArt,
@@ -2927,10 +3060,17 @@ fun IslandOverlayRoot(
 
                 // Left parenthesis `(`: tips facing right are at centerX + tipOffsetFromCenter.
                 // Sits at islandLeft - parenthesisGap - extraShootDp.
-                val islandLeftDp = when {
+                val mainPillLeftEdge = when {
                     settings.isLeftCutout -> -settings.heightDp.dp / 2f
+                    settings.isRightCutout -> -(animatedCompactWidth - settings.heightDp.dp / 2f)
                     settings.isTeardropCutout -> -(animatedCompactWidth / 2f - teardropEarRadius) + animatedDualMainShiftX
                     else -> -animatedCompactWidth / 2f + animatedDualMainShiftX
+                }
+                val bubbleLeftEdge = -animatedBubbleOffsetX
+                val islandLeftDp = if (settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
+                    minOf(mainPillLeftEdge, bubbleLeftEdge)
+                } else {
+                    mainPillLeftEdge
                 }
                 val leftCenterXPx = with(density) {
                     (islandLeftDp - parenthesisGap - extraShootDp - tipOffsetFromCenter).roundToPx()
@@ -2941,6 +3081,7 @@ fun IslandOverlayRoot(
                 // When emerging, curve shoots out slightly further from the island and settles back.
                 val mainPillRightEdge = when {
                     settings.isLeftCutout -> animatedCompactWidth - settings.heightDp.dp / 2f
+                    settings.isRightCutout -> settings.heightDp.dp / 2f
                     settings.isTeardropCutout -> (animatedCompactWidth / 2f - teardropEarRadius) + animatedDualMainShiftX
                     else -> animatedCompactWidth / 2f + animatedDualMainShiftX
                 }
@@ -2949,7 +3090,7 @@ fun IslandOverlayRoot(
                 } else {
                     animatedBubbleOffsetX + (bubbleSize / 2f)
                 }
-                val rightContentEdgeDp = if (!isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
+                val rightContentEdgeDp = if (!settings.isRightCutout && !isCharging && !isUnlock && !isBluetooth && !isRingerMode && !isAirplaneMode && !isTaskConfirmation && animatedBubbleOffsetX > 1.dp) {
                     maxOf(mainPillRightEdge, bubbleRightEdge)
                 } else {
                     mainPillRightEdge
@@ -2984,6 +3125,8 @@ fun IslandOverlayRoot(
                         .graphicsLayer { alpha = effectiveParenthesisAlpha }
                 )
             }
+        }
+        }
         }
     }
     }
@@ -3465,6 +3608,7 @@ fun CompactContent(
     activeCall: ActiveCallState = ActiveCallState(),
     isCompactDual: Boolean = false,
     isLeftCutout: Boolean = false,
+    isRightCutout: Boolean = false,
     isTeardropCutout: Boolean = false,
     teardropEarInset: Dp = 0.dp,
     spinningAlbumArt: Boolean = false,
@@ -3519,7 +3663,7 @@ fun CompactContent(
 
             IslandPriority.FLASHLIGHT -> {
                 Box(
-                    modifier = if (isLeftCutout || isCompactDual) Modifier else Modifier.offset(x = (-4).dp),
+                    modifier = if (isLeftCutout || isRightCutout || isCompactDual) Modifier else Modifier.offset(x = (-4).dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -3592,7 +3736,7 @@ fun CompactContent(
                         bitmap = displayArt,
                         isPlaying = media?.isPlaying == true,
                         size = 22.dp,
-                        modifier = if (isLeftCutout || isCompactDual) Modifier else Modifier.offset(x = (-3).dp),
+                        modifier = if (isLeftCutout || isRightCutout || isCompactDual) Modifier else Modifier.offset(x = (-3).dp),
                         shape = vinylShape
                     )
                 } else if (displayArt != null) {
@@ -3748,7 +3892,7 @@ fun CompactContent(
             IslandPriority.WEATHER -> {
                 Text(
                     text = "${weatherInfo.temperatureC}°",
-                    color = if (isM3) m3OnSurface else Color.White,
+                    color = if (isM3) m3Primary else Color.White,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -3829,15 +3973,18 @@ fun CompactContent(
         }
     }
 
-    if (isLeftCutout) {
-        // Left-sided camera cut-out mode:
-        // Leave left 36dp clear for the camera cut-out, and group both minimised elements together on the right side with slight spacing!
+    if (isLeftCutout || isRightCutout) {
+        // Side camera cut-out mode:
+        // Leave 38dp clear over the camera cut-out, and group both minimised elements together on the opposite side with slight spacing!
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 38.dp, end = if (isCompactDual) 11.dp else 10.dp),
+                .padding(
+                    start = if (isLeftCutout) 38.dp else if (isCompactDual) 11.dp else 10.dp,
+                    end = if (isRightCutout) 38.dp else if (isCompactDual) 11.dp else 10.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.End)
+            horizontalArrangement = Arrangement.spacedBy(7.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
         ) {
             leadingElement()
             trailingElement()
@@ -3919,6 +4066,7 @@ fun ExpandedCardContent(
     scale: Float = 1.0f,
     spinningAlbumArt: Boolean = false,
     wavyProgressBar: Boolean = true,
+    showMediaLyrics: Boolean = true,
     notificationMaxLines: Int = 2,
     charging: IslandStateManager.ChargingInfo? = null,
     designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE,
@@ -3949,6 +4097,7 @@ fun ExpandedCardContent(
                 scale = scale,
                 spinningAlbumArt = spinningAlbumArt,
                 wavyProgressBar = wavyProgressBar,
+                showMediaLyrics = showMediaLyrics,
                 designLanguage = designLanguage,
                 mediaControlAlignment = mediaControlAlignment,
                 mediaLayersOrder = mediaLayersOrder
@@ -4309,6 +4458,7 @@ fun ExpandedMediaView(
     scale: Float = 1.0f,
     spinningAlbumArt: Boolean = false,
     wavyProgressBar: Boolean = true,
+    showMediaLyrics: Boolean = true,
     designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE,
     mediaControlAlignment: String = "CENTER",
     mediaLayersOrder: List<String> = DEFAULT_MEDIA_LAYERS
@@ -4327,12 +4477,22 @@ fun ExpandedMediaView(
         mutableLongStateOf(media?.computeCurrentPosition() ?: 0L)
     }
 
+    LaunchedEffect(media?.title, media?.artist, media?.durationMs) {
+        if (media != null && media.title.isNotBlank()) {
+            LyricsManager.onTrackChanged(
+                title = media.title,
+                artist = media.artist,
+                durationMs = media.durationMs
+            )
+        }
+    }
+
     LaunchedEffect(media?.isPlaying, media?.positionMs, media?.lastPositionUpdateTimeMs, isSeeking, isSeekPending) {
         if (!isSeeking && !isSeekPending) {
             livePosition = media?.computeCurrentPosition() ?: 0L
             if (media?.isPlaying == true) {
                 while (isActive) {
-                    kotlinx.coroutines.delay(250)
+                    kotlinx.coroutines.delay(180)
                     if (!isSeeking && !isSeekPending) {
                         livePosition = media?.computeCurrentPosition() ?: 0L
                     }
@@ -4731,13 +4891,84 @@ fun ExpandedMediaView(
         }
     }
 
+    val allLyrics by LyricsManager.currentLyrics.collectAsState()
+    val activeLyricLine = remember(allLyrics, currentPosition, showMediaLyrics) {
+        if (showMediaLyrics && allLyrics.isNotEmpty()) {
+            LyricsManager.getCurrentLine(allLyrics, currentPosition)
+        } else null
+    }
+
+    val lyricsLayer: @Composable () -> Unit = {
+        if (activeLyricLine != null) {
+            val lyricHighlightTint = if (mediaAccentColor != Color.Transparent) {
+                lerp(Color.White, mediaAccentColor, 0.30f)
+            } else {
+                Color.White
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(
+                    targetState = activeLyricLine.text,
+                    transitionSpec = {
+                        (slideInVertically(
+                            initialOffsetY = { fullHeight -> (fullHeight * 0.65f).toInt() },
+                            animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f)
+                        ) + fadeIn(tween(180))) togetherWith (slideOutVertically(
+                            targetOffsetY = { fullHeight -> -(fullHeight * 0.65f).toInt() },
+                            animationSpec = tween(150)
+                        ) + fadeOut(tween(140)))
+                    },
+                    label = "karaokeLineTransition"
+                ) { lineText ->
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = lyricHighlightTint.copy(alpha = 0.85f),
+                            modifier = Modifier.size((13.dp * scale).coerceIn(11.dp, 15.dp))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = lineText,
+                            color = lyricHighlightTint,
+                            fontSize = (12.5f * scale).coerceIn(11f, 14.5f).sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee(
+                                iterations = Int.MAX_VALUE,
+                                initialDelayMillis = 900,
+                                velocity = 28.dp
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         resolvedLayers.forEach { layerKey ->
             when (layerKey) {
-                "COVER_AND_TITLE" -> headerLayer()
+                "COVER_AND_TITLE" -> {
+                    headerLayer()
+                    if (activeLyricLine != null) {
+                        lyricsLayer()
+                    }
+                }
                 "SLIDER" -> sliderLayer()
                 "CONTROLS" -> controlsLayer()
             }
@@ -6436,31 +6667,37 @@ fun ExpandedNetworkSpeedView(
 @Composable
 private fun BluetoothModePill(
     isLeftCutout: Boolean,
+    isRightCutout: Boolean = false,
     bluetoothContentAlpha: Float,
     bluetoothCheckmarkAlpha: Float,
     bluetoothCheckmarkScale: Float,
-    teardropEarRadius: Dp
+    teardropEarRadius: Dp,
+    designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE
 ) {
-    if (isLeftCutout) {
+    val btTint = if (designLanguage == DesignLanguage.MATERIAL3) MaterialTheme.colorScheme.primary else Color.White
+    if (isLeftCutout || isRightCutout) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 38.dp, end = 12.dp)
+                .padding(
+                    start = if (isLeftCutout) 38.dp else 12.dp,
+                    end = if (isRightCutout) 38.dp else 12.dp
+                )
                 .graphicsLayer { alpha = bluetoothContentAlpha },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            horizontalArrangement = Arrangement.spacedBy(8.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
         ) {
             Icon(
                 imageVector = Icons.Default.Bluetooth,
                 contentDescription = "Bluetooth",
-                tint = Color.White,
+                tint = btTint,
                 modifier = Modifier.size(18.dp)
             )
             if (bluetoothCheckmarkAlpha > 0.01f) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Connected",
-                    tint = Color.White,
+                    tint = btTint,
                     modifier = Modifier
                         .graphicsLayer {
                             alpha = bluetoothCheckmarkAlpha
@@ -6486,7 +6723,7 @@ private fun BluetoothModePill(
                 Icon(
                     imageVector = Icons.Default.Bluetooth,
                     contentDescription = "Bluetooth",
-                    tint = Color.White,
+                    tint = btTint,
                     modifier = Modifier.size(19.dp)
                 )
             }
@@ -6501,7 +6738,7 @@ private fun BluetoothModePill(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Connected",
-                        tint = Color.White,
+                        tint = btTint,
                         modifier = Modifier
                             .graphicsLayer {
                                 alpha = bluetoothCheckmarkAlpha
@@ -6520,22 +6757,25 @@ private fun BluetoothModePill(
 private fun RingerModePill(
     displayRingerMode: IslandStateManager.RingerMode,
     isLeftCutout: Boolean,
+    isRightCutout: Boolean = false,
     ringerContentAlpha: Float,
     ringerSecondaryAlpha: Float,
     ringerSecondaryScale: Float,
     bellShakeRotation: Float,
     vibrateShakeOffset: Dp,
-    teardropEarRadius: Dp
+    teardropEarRadius: Dp,
+    designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE
 ) {
+    val isM3 = designLanguage == DesignLanguage.MATERIAL3
     val icon = when (displayRingerMode) {
         IslandStateManager.RingerMode.SILENT -> Icons.Default.NotificationsOff
         IslandStateManager.RingerMode.VIBRATE -> Icons.Default.Vibration
         IslandStateManager.RingerMode.RING -> Icons.Default.Notifications
     }
     val iconTint = if (displayRingerMode == IslandStateManager.RingerMode.SILENT) {
-        Color(0xFFFF3B30)
+        if (isM3) MaterialTheme.colorScheme.error else Color(0xFFFF3B30)
     } else {
-        Color.White
+        if (isM3) MaterialTheme.colorScheme.primary else Color.White
     }
     val labelText = when (displayRingerMode) {
         IslandStateManager.RingerMode.SILENT -> "Silent"
@@ -6543,19 +6783,22 @@ private fun RingerModePill(
         IslandStateManager.RingerMode.RING -> "Ring"
     }
     val labelColor = if (displayRingerMode == IslandStateManager.RingerMode.SILENT) {
-        Color(0xFFFF3B30)
+        if (isM3) MaterialTheme.colorScheme.error else Color(0xFFFF3B30)
     } else {
-        Color.White
+        if (isM3) MaterialTheme.colorScheme.onSurface else Color.White
     }
 
-    if (isLeftCutout) {
+    if (isLeftCutout || isRightCutout) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 38.dp, end = 12.dp)
+                .padding(
+                    start = if (isLeftCutout) 38.dp else 12.dp,
+                    end = if (isRightCutout) 38.dp else 12.dp
+                )
                 .graphicsLayer { alpha = ringerContentAlpha },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            horizontalArrangement = Arrangement.spacedBy(8.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
         ) {
             Icon(
                 imageVector = icon,
@@ -6656,19 +6899,23 @@ private fun RingerModePill(
 private fun AirplaneModePill(
     displayAirplaneMode: Boolean,
     isLeftCutout: Boolean,
+    isRightCutout: Boolean = false,
     airplaneContentAlpha: Float,
     airplaneSecondaryAlpha: Float,
     airplaneSecondaryScale: Float,
     flightProgress: Float,
-    teardropEarRadius: Dp
+    teardropEarRadius: Dp,
+    designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE
 ) {
-    val airplaneOrange = Color(0xFFFF9500)
+    val isM3 = designLanguage == DesignLanguage.MATERIAL3
+    val airplaneColor = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFFFF9500)
+    val labelColor = if (isM3) MaterialTheme.colorScheme.onSurface else Color.White
     val labelText = if (displayAirplaneMode) "On" else "Off"
     val p = flightProgress
     val transX = if (displayAirplaneMode) {
         (-42f * (1f - p)).dp
     } else {
-        if (isLeftCutout) (-32f * p).dp else (34f * p).dp
+        if (isLeftCutout || isRightCutout) (-32f * p).dp else (34f * p).dp
     }
     val transY = if (displayAirplaneMode) {
         ((1f - p) * 6f - kotlin.math.sin(p * Math.PI).toFloat() * 4f).dp
@@ -6678,7 +6925,7 @@ private fun AirplaneModePill(
     val rotZ = if (displayAirplaneMode) {
         72f + (18f * p)
     } else {
-        if (isLeftCutout) -90f else 90f
+        if (isLeftCutout || isRightCutout) -90f else 90f
     }
     val planeScale = if (displayAirplaneMode) {
         0.7f + (0.3f * p)
@@ -6691,19 +6938,22 @@ private fun AirplaneModePill(
         (1f - p).coerceIn(0f, 1f)
     }
 
-    if (isLeftCutout) {
+    if (isLeftCutout || isRightCutout) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 38.dp, end = 12.dp)
+                .padding(
+                    start = if (isLeftCutout) 38.dp else 12.dp,
+                    end = if (isRightCutout) 38.dp else 12.dp
+                )
                 .graphicsLayer { alpha = airplaneContentAlpha },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            horizontalArrangement = Arrangement.spacedBy(8.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
         ) {
             Icon(
                 imageVector = Icons.Default.AirplanemodeActive,
                 contentDescription = "Airplane Mode",
-                tint = airplaneOrange,
+                tint = airplaneColor,
                 modifier = Modifier
                     .graphicsLayer {
                         translationX = transX.toPx()
@@ -6718,7 +6968,7 @@ private fun AirplaneModePill(
             if (airplaneSecondaryAlpha > 0.01f) {
                 Text(
                     text = labelText,
-                    color = Color.White,
+                    color = labelColor,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -6745,7 +6995,7 @@ private fun AirplaneModePill(
                 Icon(
                     imageVector = Icons.Default.AirplanemodeActive,
                     contentDescription = "Airplane Mode",
-                    tint = airplaneOrange,
+                    tint = airplaneColor,
                     modifier = Modifier
                         .graphicsLayer {
                             translationX = transX.toPx()
@@ -6777,7 +7027,7 @@ private fun AirplaneModePill(
                     ) {
                         Text(
                             text = labelText,
-                            color = Color.White,
+                            color = labelColor,
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1
@@ -6932,10 +7182,14 @@ fun ExpandedAlarmView(
 private fun TaskConfirmationPill(
     confirmation: IslandStateManager.TaskConfirmation?,
     isLeftCutout: Boolean,
+    isRightCutout: Boolean = false,
     contentAlpha: Float,
-    teardropEarRadius: Dp
+    teardropEarRadius: Dp,
+    designLanguage: DesignLanguage = DesignLanguage.DROIDBUBBLE
 ) {
     if (confirmation == null) return
+    val isM3 = designLanguage == DesignLanguage.MATERIAL3
+    val checkmarkTint = if (isM3) MaterialTheme.colorScheme.primary else Color(0xFF30D158)
     val checkmarkScale = remember { Animatable(0.4f) }
     LaunchedEffect(confirmation.timestamp) {
         checkmarkScale.snapTo(0.4f)
@@ -6945,14 +7199,17 @@ private fun TaskConfirmationPill(
         )
     }
 
-    if (isLeftCutout) {
+    if (isLeftCutout || isRightCutout) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 38.dp, end = 12.dp)
+                .padding(
+                    start = if (isLeftCutout) 38.dp else 12.dp,
+                    end = if (isRightCutout) 38.dp else 12.dp
+                )
                 .graphicsLayer { alpha = contentAlpha },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
+            horizontalArrangement = Arrangement.spacedBy(10.dp, if (isLeftCutout) Alignment.End else Alignment.Start)
         ) {
             Icon(
                 imageVector = com.droidbubble.app.tasks.TaskIcons.getIcon(confirmation.iconName),
@@ -6963,7 +7220,7 @@ private fun TaskConfirmationPill(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = "Success",
-                tint = Color(0xFF30D158),
+                tint = checkmarkTint,
                 modifier = Modifier
                     .size(18.dp)
                     .graphicsLayer {
@@ -7001,7 +7258,7 @@ private fun TaskConfirmationPill(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Success",
-                    tint = Color(0xFF30D158),
+                    tint = checkmarkTint,
                     modifier = Modifier
                         .size(19.dp)
                         .graphicsLayer {

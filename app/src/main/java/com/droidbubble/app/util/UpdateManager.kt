@@ -39,9 +39,9 @@ object UpdateManager {
     fun getCurrentVersion(context: Context): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "2.0.0"
+            pInfo.versionName ?: "2.0.2"
         } catch (_: Exception) {
-            "2.0.0"
+            "2.0.2"
         }
     }
 
@@ -305,10 +305,28 @@ object UpdateManager {
         }
     }
 
-    fun installApk(context: Context, apkFile: File) {
-        try {
+    @Volatile
+    private var pendingSelfUpdateApkFile: File? = null
+
+    fun resumePendingSelfUpdateIfPermitted(context: Context): Boolean {
+        val pending = pendingSelfUpdateApkFile ?: return false
+        if (!pending.exists()) {
+            pendingSelfUpdateApkFile = null
+            return false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            return false
+        }
+        pendingSelfUpdateApkFile = null
+        installApk(context, pending)
+        return true
+    }
+
+    fun installApk(context: Context, apkFile: File): Boolean {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
+                    pendingSelfUpdateApkFile = apkFile
                     val manageIntent = Intent(
                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:${context.packageName}")
@@ -316,7 +334,7 @@ object UpdateManager {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(manageIntent)
-                    return
+                    return false
                 }
             }
 
@@ -332,8 +350,10 @@ object UpdateManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(installIntent)
+            true
         } catch (e: Exception) {
             e.printStackTrace()
+            false
         }
     }
 }

@@ -96,7 +96,7 @@ class MainScreenViewModel(private val repository: SettingsRepository) : ViewMode
             if (apkFile != null) {
                 com.droidbubble.app.util.UpdateManager.installApk(context, apkFile)
                 _showUpdateSheet.value = false
-                _updateState.value = UpdateState.UpToDate
+                _updateState.value = UpdateState.Available(release)
             } else {
                 _updateState.value = UpdateState.Error("Failed to download update APK")
             }
@@ -104,6 +104,7 @@ class MainScreenViewModel(private val repository: SettingsRepository) : ViewMode
     }
 
     fun refreshUpdateStateOnResume(context: Context) {
+        com.droidbubble.app.util.UpdateManager.resumePendingSelfUpdateIfPermitted(context)
         val current = com.droidbubble.app.util.UpdateManager.getCurrentVersion(context)
         val state = _updateState.value
         if (state is UpdateState.Available) {
@@ -136,7 +137,7 @@ class MainScreenViewModel(private val repository: SettingsRepository) : ViewMode
     }
 
     fun loadInstalledApps(context: Context) {
-        if (_installedApps.value.isNotEmpty()) return
+        if (_installedApps.value.isNotEmpty() || _isLoadingApps.value) return
         viewModelScope.launch {
             _isLoadingApps.value = true
             val apps = withContext(Dispatchers.IO) {
@@ -144,20 +145,27 @@ class MainScreenViewModel(private val repository: SettingsRepository) : ViewMode
                 val intent = Intent(Intent.ACTION_MAIN, null).apply {
                     addCategory(Intent.CATEGORY_LAUNCHER)
                 }
-                val resolveInfos = pm.queryIntentActivities(intent, 0)
+                val resolveInfos = try {
+                    pm.queryIntentActivities(intent, 0)
+                } catch (_: Throwable) {
+                    emptyList()
+                }
                 val currentBlocked = settings.value.blockedPackages
+                val seenPackages = HashSet<String>()
 
                 resolveInfos.mapNotNull { resolveInfo ->
-                    val pkg = resolveInfo.activityInfo.packageName
-                    if (pkg == context.packageName) return@mapNotNull null
-                    val name = resolveInfo.loadLabel(pm).toString()
-                    val icon = resolveInfo.loadIcon(pm)
-                    AppItem(
-                        packageName = pkg,
-                        appName = name,
-                        icon = icon,
-                        isBlocked = currentBlocked.contains(pkg)
-                    )
+                    val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
+                    if (pkg == context.packageName || !seenPackages.add(pkg)) return@mapNotNull null
+                    runCatching {
+                        val name = resolveInfo.loadLabel(pm)?.toString() ?: pkg
+                        val icon = resolveInfo.loadIcon(pm)
+                        AppItem(
+                            packageName = pkg,
+                            appName = name,
+                            icon = icon,
+                            isBlocked = currentBlocked.contains(pkg)
+                        )
+                    }.getOrNull()
                 }.sortedBy { it.appName.lowercase() }
             }
             _installedApps.value = apps

@@ -1,5 +1,9 @@
-﻿package com.droidbubble.app.ui.main
+package com.droidbubble.app.ui.main
 
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.geometry.Offset
@@ -20,10 +24,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 
 import com.droidbubble.app.island.M3CookieShape
 import com.droidbubble.app.island.M3Cookie6Shape
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Screenshot
 import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.ui.graphics.lerp
 
 
 import android.content.ClipData
@@ -100,6 +109,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CropSquare
@@ -109,6 +119,7 @@ import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.Widgets
@@ -212,9 +223,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -240,7 +254,11 @@ enum class MainScreenPage {
     MEDIA_PLAYER,
     DROIDBAR,
     DROIDBAR_APPS,
-    TASKS
+    TASKS,
+    DISPLAY_SETTINGS,
+    SOUND_AND_VIBRATIONS,
+    BATTERY_AND_POWER_SAVING,
+    NOTIFICATIONS
 }
 
 
@@ -259,6 +277,7 @@ fun UpdateCardItem(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .height(56.dp)
             .clip(RoundedCornerShape(28.dp))
             .clickable(enabled = !isDownloading && !isChecking) {
                 if (isAvailable) {
@@ -382,6 +401,11 @@ fun MainScreen(
     var showDroidbarPage by remember { mutableStateOf(false) }
     var showDroidbarAppsPage by remember { mutableStateOf(false) }
     var showTasksPage by remember { mutableStateOf(false) }
+    var showDisplaySettingsPage by remember { mutableStateOf(false) }
+    var showSoundAndVibrationsPage by remember { mutableStateOf(false) }
+    var showBatteryAndPowerSavingPage by remember { mutableStateOf(false) }
+    var showNotificationsPage by remember { mutableStateOf(false) }
+    var selectedRootTab by remember { mutableIntStateOf(0) }
     var showFeedbackSheet by remember { mutableStateOf(false) }
     var feedbackType by remember { mutableStateOf(FeedbackType.BUG) }
     var feedbackTitle by remember { mutableStateOf("") }
@@ -416,6 +440,10 @@ fun MainScreen(
     }
 
     val currentNavPage = when {
+        showNotificationsPage -> MainScreenPage.NOTIFICATIONS
+        showBatteryAndPowerSavingPage -> MainScreenPage.BATTERY_AND_POWER_SAVING
+        showDisplaySettingsPage -> MainScreenPage.DISPLAY_SETTINGS
+        showSoundAndVibrationsPage -> MainScreenPage.SOUND_AND_VIBRATIONS
         showTasksPage -> MainScreenPage.TASKS
         showDroidbarAppsPage -> MainScreenPage.DROIDBAR_APPS
         showDroidbarPage -> MainScreenPage.DROIDBAR
@@ -512,6 +540,30 @@ fun MainScreen(
                     modifier = modifier
                 )
             }
+            MainScreenPage.DISPLAY_SETTINGS -> {
+                com.droidbubble.app.tools.DisplaySettingsPage(
+                    onBack = { showDisplaySettingsPage = false },
+                    modifier = modifier
+                )
+            }
+            MainScreenPage.SOUND_AND_VIBRATIONS -> {
+                com.droidbubble.app.tools.SoundAndVibrationsPage(
+                    onBack = { showSoundAndVibrationsPage = false },
+                    modifier = modifier
+                )
+            }
+            MainScreenPage.BATTERY_AND_POWER_SAVING -> {
+                com.droidbubble.app.tools.BatteryAndPowerSavingPage(
+                    onBack = { showBatteryAndPowerSavingPage = false },
+                    modifier = modifier
+                )
+            }
+            MainScreenPage.NOTIFICATIONS -> {
+                com.droidbubble.app.tools.NotificationsSettingsPage(
+                    onBack = { showNotificationsPage = false },
+                    modifier = modifier
+                )
+            }
             MainScreenPage.GENERAL -> {
                 GeneralPage(
                     settings = settings,
@@ -521,20 +573,44 @@ fun MainScreen(
                 )
             }
             MainScreenPage.TOOLS_ROOT -> {
+                BackHandler(enabled = selectedRootTab != 0) {
+                    selectedRootTab = 0
+                }
                 val toolsListState = rememberLazyListState()
+                val deviceInfoListState = rememberLazyListState()
+                val githubUpdatesListState = rememberLazyListState()
+                val activeListState = when (selectedRootTab) {
+                    0 -> toolsListState
+                    1 -> deviceInfoListState
+                    else -> githubUpdatesListState
+                }
                 var overscrollOffset by remember { mutableFloatStateOf(0f) }
+                var lastHapticStep by remember { mutableIntStateOf(0) }
+
+                LaunchedEffect(selectedRootTab) {
+                    if (selectedRootTab != 0) {
+                        overscrollOffset = 0f
+                        lastHapticStep = 0
+                    }
+                }
+
                 val animatedOverscroll by animateFloatAsState(
-                    targetValue = overscrollOffset,
+                    targetValue = if (selectedRootTab == 0) overscrollOffset else 0f,
                     animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
                     label = "overscrollOffset"
                 )
 
-                val nestedScrollConnection = remember {
+                val nestedScrollConnection = remember(activeListState, selectedRootTab) {
                     object : NestedScrollConnection {
                         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                            if (selectedRootTab != 0) return Offset.Zero
                             if (available.y < 0 && overscrollOffset > 0f) {
                                 val consumed = available.y.coerceAtLeast(-overscrollOffset)
                                 overscrollOffset += consumed
+                                val step = (overscrollOffset / 24f).toInt()
+                                if (step < lastHapticStep) {
+                                    lastHapticStep = step
+                                }
                                 return Offset(0f, consumed)
                             }
                             return Offset.Zero
@@ -545,9 +621,18 @@ fun MainScreen(
                             available: Offset,
                             source: NestedScrollSource
                         ): Offset {
-                            if (available.y > 0 && toolsListState.firstVisibleItemIndex == 0 && toolsListState.firstVisibleItemScrollOffset == 0) {
+                            if (selectedRootTab != 0) return Offset.Zero
+                            if (available.y > 0 && activeListState.firstVisibleItemIndex == 0 && activeListState.firstVisibleItemScrollOffset == 0) {
                                 val delta = available.y * 0.45f
-                                overscrollOffset = (overscrollOffset + delta).coerceAtMost(160f)
+                                val nextOffset = (overscrollOffset + delta).coerceAtMost(160f)
+                                val nextStep = (nextOffset / 24f).toInt()
+                                if (nextStep > lastHapticStep && nextStep <= 3) {
+                                    lastHapticStep = nextStep
+                                    view.performHapticFeedback(
+                                        if (nextStep == 3) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CLOCK_TICK
+                                    )
+                                }
+                                overscrollOffset = nextOffset
                                 return Offset(0f, available.y)
                             }
                             return Offset.Zero
@@ -555,11 +640,13 @@ fun MainScreen(
 
                         override suspend fun onPreFling(available: Velocity): Velocity {
                             overscrollOffset = 0f
+                            lastHapticStep = 0
                             return Velocity.Zero
                         }
 
                         override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                             overscrollOffset = 0f
+                            lastHapticStep = 0
                             return Velocity.Zero
                         }
                     }
@@ -569,182 +656,365 @@ fun MainScreen(
                 val appVersion = remember { com.droidbubble.app.util.UpdateManager.getCurrentVersion(context) }
                 val titleSize = (20f + (expandProgress * 8f)).sp
                 val topBarHeight = (64.dp + (expandProgress * 36).dp)
+                val density = LocalDensity.current
 
                 Scaffold(
                     modifier = modifier.nestedScroll(nestedScrollConnection),
                     topBar = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(topBarHeight)
-                                .background(MaterialTheme.colorScheme.background)
-                                .statusBarsPadding(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Droidtools",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = titleSize,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    letterSpacing = if (expandProgress > 0.05f) (0.5.sp * expandProgress) else 0.sp
+                        if (selectedRootTab == 0) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(topBarHeight)
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .statusBarsPadding()
+                                    .padding(horizontal = 20.dp),
+                                contentAlignment = BiasAlignment(
+                                    horizontalBias = -1f + expandProgress,
+                                    verticalBias = 0f
                                 )
-                                if (expandProgress > 0.02f) {
+                            ) {
+                                Column(
+                                    horizontalAlignment = if (expandProgress > 0.35f) Alignment.CenterHorizontally else Alignment.Start,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
                                     Text(
-                                        text = "v$appVersion",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = expandProgress),
-                                        modifier = Modifier.graphicsLayer { alpha = expandProgress }
+                                        text = "Droidtools",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = titleSize,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        letterSpacing = if (expandProgress > 0.05f) (0.5.sp * expandProgress) else 0.sp
                                     )
+                                    if (expandProgress > 0.02f) {
+                                        Text(
+                                            text = "v$appVersion",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = expandProgress),
+                                            modifier = Modifier.graphicsLayer { alpha = expandProgress }
+                                        )
+                                    }
                                 }
                             }
-
-                            IconButton(
-                                onClick = { showFeedbackSheet = true },
+                        } else {
+                            Spacer(
                                 modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(end = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Feedback,
-                                    contentDescription = "Send Feedback",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .statusBarsPadding()
+                            )
                         }
                     }
                 ) { innerPadding ->
-                    LazyColumn(
-                        state = toolsListState,
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(innerPadding),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(innerPadding)
                     ) {
-                        item {
-                            UpdateCardItem(
-                                updateState = updateState,
-                                onCheck = { viewModel.checkForUpdates(context) },
-                                onOpenSheet = { viewModel.openUpdateSheet() }
-                            )
+                        var contentHeightPx by remember { mutableFloatStateOf(0f) }
+                        val blurRegionPx = with(density) { 125.dp.toPx() }
+                        val maxSigmaPx = with(density) { 16.dp.toPx() }
+
+                        val progressiveBlurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && contentHeightPx > 0f) {
+                            val startY = (contentHeightPx - blurRegionPx).coerceAtLeast(0f)
+                            val endY = contentHeightPx
+                            Modifier.graphicsLayer {
+                                clip = true
+                                val shader = android.graphics.RuntimeShader(PROGRESSIVE_BOTTOM_BLUR_AGSL).apply {
+                                    setFloatUniform("uStartY", startY)
+                                    setFloatUniform("uEndY", endY)
+                                    setFloatUniform("uMaxRadius", maxSigmaPx)
+                                }
+                                renderEffect = android.graphics.RenderEffect
+                                    .createRuntimeShaderEffect(shader, "content")
+                                    .asComposeRenderEffect()
+                            }
+                        } else {
+                            Modifier
                         }
 
-                        item {
-                            SectionHeader(
-                                title = "Utilities",
-                                icon = Icons.Default.Widgets
-                            )
-                        }
-
-                        item {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                SettingsCardItem(position = GroupPosition.TOP) {
-                                    ListItem(
-                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                        headlineContent = { Text("Droidbubble", fontWeight = FontWeight.SemiBold) },
-                                        leadingContent = {
-                                            Surface(
-                                                modifier = Modifier.size(38.dp),
-                                                shape = M3Cookie6Shape,
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                contentColor = MaterialTheme.colorScheme.primary
-                                            ) {
-                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Widgets,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        trailingContent = {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                                contentDescription = "Open Droidbubble",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
-                                        modifier = Modifier.clickable { showDroidbubblePage = true }
-                                    )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { coords ->
+                                    contentHeightPx = coords.size.height.toFloat()
                                 }
-
-                                SettingsCardItem(position = GroupPosition.MIDDLE) {
-                                    ListItem(
-                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                        headlineContent = { Text("Droidbar", fontWeight = FontWeight.SemiBold) },
-                                        leadingContent = {
-                                            Surface(
-                                                modifier = Modifier.size(38.dp),
-                                                shape = M3Cookie6Shape,
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                contentColor = MaterialTheme.colorScheme.primary
+                                .then(progressiveBlurModifier)
+                        ) {
+                            AnimatedContent(
+                                targetState = selectedRootTab,
+                                transitionSpec = {
+                                    if (targetState > initialState) {
+                                        (slideInHorizontally(
+                                            initialOffsetX = { fullWidth -> fullWidth / 3 },
+                                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = 0.85f)
+                                        ) + fadeIn(animationSpec = tween(200)))
+                                            .togetherWith(
+                                                slideOutHorizontally(
+                                                    targetOffsetX = { fullWidth -> -fullWidth / 3 },
+                                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = 0.85f)
+                                                ) + fadeOut(animationSpec = tween(160))
+                                            )
+                                    } else {
+                                        (slideInHorizontally(
+                                            initialOffsetX = { fullWidth -> -fullWidth / 3 },
+                                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = 0.85f)
+                                        ) + fadeIn(animationSpec = tween(200)))
+                                            .togetherWith(
+                                                slideOutHorizontally(
+                                                    targetOffsetX = { fullWidth -> fullWidth / 3 },
+                                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = 0.85f)
+                                                ) + fadeOut(animationSpec = tween(160))
+                                            )
+                                    }
+                                },
+                                label = "rootBottomNavContent"
+                            ) { tabIndex ->
+                                if (tabIndex == 0) {
+                                    val toolsIsScrolled by remember {
+                                        derivedStateOf {
+                                            toolsListState.firstVisibleItemIndex > 0 || toolsListState.firstVisibleItemScrollOffset > 6
+                                        }
+                                    }
+                                    ProgressiveTopBlurBox(
+                                        isScrolled = toolsIsScrolled,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                    LazyColumn(
+                                        state = toolsListState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        item {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.VerticalSplit,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = MaterialTheme.colorScheme.primary
+                                                UpdateCardItem(
+                                                    updateState = updateState,
+                                                    onCheck = { viewModel.checkForUpdates(context) },
+                                                    onOpenSheet = { viewModel.openUpdateSheet() },
+                                                    modifier = Modifier.weight(1f)
+                                                )
+
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .size(56.dp)
+                                                        .clip(CircleShape)
+                                                        .clickable { showFeedbackSheet = true },
+                                                    shape = CircleShape,
+                                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                    contentColor = MaterialTheme.colorScheme.primary,
+                                                    shadowElevation = 2.dp
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Feedback,
+                                                            contentDescription = "Send Feedback",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(22.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        item {
+                                            SectionHeader(
+                                                title = "Utilities",
+                                                icon = Icons.Default.Widgets
+                                            )
+                                        }
+
+                                        item {
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                SettingsCardItem(position = GroupPosition.TOP) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Droidbubble", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.Widgets)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Droidbubble",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showDroidbubblePage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.MIDDLE) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Droidbar", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.VerticalSplit)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Droidbar",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showDroidbarPage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.MIDDLE) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Tasks", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.Bolt)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Tasks",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showTasksPage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.MIDDLE) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Display settings", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.WbSunny)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Display settings",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showDisplaySettingsPage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.MIDDLE) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Sound and vibrations", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.VolumeUp)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Sound and vibrations",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showSoundAndVibrationsPage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.MIDDLE) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Battery and power saving", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.BatteryChargingFull)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Battery and power saving",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showBatteryAndPowerSavingPage = true }
+                                                    )
+                                                }
+
+                                                SettingsCardItem(position = GroupPosition.BOTTOM) {
+                                                    ListItem(
+                                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                        headlineContent = { Text("Notifications", fontWeight = FontWeight.SemiBold) },
+                                                        leadingContent = {
+                                                            CookieIconBox(icon = Icons.Default.Notifications)
+                                                        },
+                                                        trailingContent = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                                contentDescription = "Open Notifications",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        modifier = Modifier.clickable { showNotificationsPage = true }
                                                     )
                                                 }
                                             }
-                                        },
-                                        trailingContent = {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                                contentDescription = "Open Droidbar",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
-                                        modifier = Modifier.clickable { showDroidbarPage = true }
+                                        }
+                                    }
+                                    }
+                                } else if (tabIndex == 1) {
+                                    com.droidbubble.app.tools.DeviceInfoTabContent(
+                                        listState = deviceInfoListState
                                     )
-                                }
-
-                                SettingsCardItem(position = GroupPosition.BOTTOM) {
-                                    ListItem(
-                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                        headlineContent = { Text("Tasks", fontWeight = FontWeight.SemiBold) },
-                                        leadingContent = {
-                                            Surface(
-                                                modifier = Modifier.size(38.dp),
-                                                shape = M3Cookie6Shape,
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                contentColor = MaterialTheme.colorScheme.primary
-                                            ) {
-                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Bolt,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(20.dp),
-                                                        tint = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        trailingContent = {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                                contentDescription = "Open Tasks",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
-                                        modifier = Modifier.clickable { showTasksPage = true }
+                                } else {
+                                    com.droidbubble.app.updates.GithubUpdatesTabContent(
+                                        listState = githubUpdatesListState
                                     )
                                 }
                             }
                         }
+
+                        // Progressive bottom gradient scrim below the 2-tab bar
+                        val bgColor = MaterialTheme.colorScheme.background
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(115.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            bgColor.copy(alpha = 0.35f),
+                                            bgColor.copy(alpha = 0.78f),
+                                            bgColor.copy(alpha = 0.96f)
+                                        )
+                                    )
+                                )
+                        )
+
+                        ShortFloatingBottomNav(
+                            selectedTab = selectedRootTab,
+                            onSelectTab = { newTab ->
+                                if (selectedRootTab != newTab) {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    selectedRootTab = newTab
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(bottom = 16.dp)
+                        )
                     }
                 }
             }
@@ -786,10 +1056,21 @@ fun MainScreen(
                         )
                     }
                 ) { innerPadding ->
-        LazyColumn(
+        val droidbubbleListState = rememberLazyListState()
+        val droidbubbleIsScrolled by remember {
+            derivedStateOf {
+                droidbubbleListState.firstVisibleItemIndex > 0 || droidbubbleListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = droidbubbleIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = droidbubbleListState,
+            modifier = Modifier.fillMaxSize(),
             userScrollEnabled = !isDraggingIslandActivity,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -895,16 +1176,7 @@ fun MainScreen(
                             modifier = Modifier.clickable { showDimensionsPage = true },
                             headlineContent = { Text("Island Dimensions", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Straighten, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
+                                CookieIconBox(icon = Icons.Default.Straighten)
                             },
                             trailingContent = {
                                 Icon(
@@ -923,16 +1195,7 @@ fun MainScreen(
                             modifier = Modifier.clickable { showAppearancePage = true },
                             headlineContent = { Text("Appearance & Feedback", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
+                                CookieIconBox(icon = Icons.Default.Palette)
                             },
                             trailingContent = {
                                 Icon(
@@ -951,16 +1214,7 @@ fun MainScreen(
                             modifier = Modifier.clickable { showMediaPlayerPage = true },
                             headlineContent = { Text("Media Player Customisation", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
+                                CookieIconBox(icon = Icons.Default.MusicNote)
                             },
                             trailingContent = {
                                 Icon(
@@ -979,16 +1233,7 @@ fun MainScreen(
                             modifier = Modifier.clickable { showGeneralPage = true },
                             headlineContent = { Text("General", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
+                                CookieIconBox(icon = Icons.Default.Tune)
                             },
                             trailingContent = {
                                 Icon(
@@ -1318,6 +1563,7 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
+        }
     }
         }
     }
@@ -1375,14 +1621,18 @@ fun MainScreen(
                             headlineContent = { Text(app.appName, fontWeight = FontWeight.Medium) },
                             leadingContent = {
                                 if (app.icon != null) {
-                                    val bitmap = remember(app.icon) { app.icon.toBitmap(96, 96) }
-                                    Image(
-                                        bitmap = bitmap.asImageBitmap(),
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
+                                    val bitmap = remember(app.icon) { MostUsedAppsHelper.drawableToBitmap(app.icon) }
+                                    if (bitmap != null) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(36.dp))
+                                    }
                                 } else {
                                     Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(36.dp))
                                 }
@@ -1805,12 +2055,248 @@ fun MainScreen(
 
 }
 
+private const val PROGRESSIVE_TOP_BLUR_AGSL = """
+    uniform shader content;
+    uniform float uStartY;
+    uniform float uEndY;
+    uniform float uMaxRadius;
+
+    half4 main(float2 coord) {
+        if (coord.y >= uEndY) {
+            return content.eval(coord);
+        }
+        float t = clamp((uEndY - coord.y) / max(1.0, uEndY - uStartY), 0.0, 1.0);
+        float radius = t * t * uMaxRadius;
+        if (radius < 0.5) {
+            return content.eval(coord);
+        }
+        half4 sum = content.eval(coord) * 0.20;
+        float r1 = radius * 0.45;
+        float r2 = radius;
+        sum += content.eval(coord + float2(r1, 0.0)) * 0.12;
+        sum += content.eval(coord + float2(-r1, 0.0)) * 0.12;
+        sum += content.eval(coord + float2(0.0, r1)) * 0.12;
+        sum += content.eval(coord + float2(0.0, -r1)) * 0.12;
+        sum += content.eval(coord + float2(r2 * 0.707, r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(-r2 * 0.707, r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(r2 * 0.707, -r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(-r2 * 0.707, -r2 * 0.707)) * 0.08;
+        return sum;
+    }
+"""
+
+@Composable
+fun ProgressiveTopBlurBox(
+    isScrolled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val density = LocalDensity.current
+    val blurAlpha by animateFloatAsState(
+        targetValue = if (isScrolled) 1f else 0f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "topBlurAlpha"
+    )
+    val blurRegionPx = with(density) { 38.dp.toPx() }
+    val maxSigmaPx = with(density) { 12.dp.toPx() } * blurAlpha
+    val bgColor = MaterialTheme.colorScheme.background
+
+    val topBlurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && blurAlpha > 0.02f) {
+        Modifier.graphicsLayer {
+            clip = true
+            val shader = android.graphics.RuntimeShader(PROGRESSIVE_TOP_BLUR_AGSL).apply {
+                setFloatUniform("uStartY", 0f)
+                setFloatUniform("uEndY", blurRegionPx)
+                setFloatUniform("uMaxRadius", maxSigmaPx)
+            }
+            renderEffect = android.graphics.RenderEffect
+                .createRuntimeShaderEffect(shader, "content")
+                .asComposeRenderEffect()
+        }
+    } else {
+        Modifier
+    }
+
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(topBlurModifier),
+            content = content
+        )
+        if (blurAlpha > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(34.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                bgColor.copy(alpha = 0.88f * blurAlpha),
+                                bgColor.copy(alpha = 0.45f * blurAlpha),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+    }
+}
+
+private const val PROGRESSIVE_BOTTOM_BLUR_AGSL = """
+    uniform shader content;
+    uniform float uStartY;
+    uniform float uEndY;
+    uniform float uMaxRadius;
+
+    half4 main(float2 coord) {
+        if (coord.y <= uStartY) {
+            return content.eval(coord);
+        }
+        float t = clamp((coord.y - uStartY) / max(1.0, uEndY - uStartY), 0.0, 1.0);
+        float radius = t * t * uMaxRadius;
+        if (radius < 0.5) {
+            return content.eval(coord);
+        }
+        half4 sum = content.eval(coord) * 0.20;
+        float r1 = radius * 0.45;
+        float r2 = radius;
+        sum += content.eval(coord + float2(r1, 0.0)) * 0.12;
+        sum += content.eval(coord + float2(-r1, 0.0)) * 0.12;
+        sum += content.eval(coord + float2(0.0, r1)) * 0.12;
+        sum += content.eval(coord + float2(0.0, -r1)) * 0.12;
+        sum += content.eval(coord + float2(r2 * 0.707, r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(-r2 * 0.707, r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(r2 * 0.707, -r2 * 0.707)) * 0.08;
+        sum += content.eval(coord + float2(-r2 * 0.707, -r2 * 0.707)) * 0.08;
+        return sum;
+    }
+"""
+
+@Composable
+fun CookieIconBox(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String? = null,
+    isChecked: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    val containerColor = lerp(
+        MaterialTheme.colorScheme.primaryContainer,
+        Color.Black,
+        if (isDark) 0.48f else 0.18f
+    )
+    val iconTint = if (isDark) {
+        lerp(MaterialTheme.colorScheme.primary, Color.White, 0.22f)
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val cookieRotation by animateFloatAsState(
+        targetValue = if (isChecked) 45f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.45f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "cookieRotation"
+    )
+    Box(
+        modifier = modifier.size(38.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = cookieRotation },
+            shape = M3Cookie6Shape,
+            color = containerColor
+        ) {}
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(20.dp),
+            tint = iconTint
+        )
+    }
+}
+
+@Composable
+fun ShortFloatingBottomNav(
+    selectedTab: Int,
+    onSelectTab: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Very light colored background that matches the system accent
+    val veryLightBarBg = lerp(Color(0xFFFAFAFC), MaterialTheme.colorScheme.primaryContainer, 0.16f)
+    val veryLightBorder = lerp(Color(0xFFE4E4E9), MaterialTheme.colorScheme.primary, 0.14f)
+    // Dark circle for the selected tab, with a light icon inside
+    val selectedCircleBg = lerp(Color(0xFF18181B), MaterialTheme.colorScheme.primary, 0.16f)
+    val selectedIconLight = lerp(Color(0xFFFAFAFC), MaterialTheme.colorScheme.primaryContainer, 0.22f)
+    val unselectedIconDark = lerp(Color(0xFF52525B), MaterialTheme.colorScheme.onSurface, 0.18f)
+
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = veryLightBarBg,
+        tonalElevation = 0.dp,
+        shadowElevation = 12.dp,
+        border = BorderStroke(1.dp, veryLightBorder)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val tabs = listOf(
+                Triple(0, Icons.Default.Settings, "Droidtools"),
+                Triple(1, Icons.Default.Smartphone, "Device Info"),
+                Triple(2, Icons.Default.CloudDownload, "GitHub App Updates")
+            )
+            tabs.forEach { (idx, icon, label) ->
+                val isSelected = selectedTab == idx
+                val itemBg by animateColorAsState(
+                    targetValue = if (isSelected) selectedCircleBg else Color.Transparent,
+                    label = "floatingNavBg"
+                )
+                val itemFg by animateColorAsState(
+                    targetValue = if (isSelected) selectedIconLight else unselectedIconDark,
+                    label = "floatingNavFg"
+                )
+                Surface(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .clickable { onSelectTab(idx) },
+                    shape = CircleShape,
+                    color = itemBg,
+                    contentColor = itemFg
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = itemFg,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun SectionHeader(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     badge: String? = null,
-    badgeColor: Color = MaterialTheme.colorScheme.primary
+    badgeColor: Color = MaterialTheme.colorScheme.primary,
+    actionLabel: String? = null,
+    actionIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onActionClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -1819,7 +2305,10 @@ fun SectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -1828,7 +2317,31 @@ fun SectionHeader(
             )
         }
 
-        if (badge != null) {
+        if (onActionClick != null && actionLabel != null) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onActionClick)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (actionIcon != null) {
+                    Icon(
+                        imageVector = actionIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        } else if (badge != null) {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -2028,10 +2541,21 @@ fun DimensionsPage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -2039,6 +2563,7 @@ fun DimensionsPage(
                 val currentCutoutMode = when {
                     settings.isTeardropCutout -> CutoutModeOption.TEARDROP
                     settings.isLeftCutout -> CutoutModeOption.LEFT
+                    settings.isRightCutout -> CutoutModeOption.RIGHT
                     else -> CutoutModeOption.CENTER
                 }
                 CutoutPositionSelectorCard(
@@ -2046,9 +2571,10 @@ fun DimensionsPage(
                     onSelectMode = { mode ->
                         onUpdateSettings { s ->
                             when (mode) {
-                                CutoutModeOption.CENTER -> s.copy(isLeftCutout = false, isTeardropCutout = false)
-                                CutoutModeOption.LEFT -> s.copy(isLeftCutout = true, isTeardropCutout = false)
-                                CutoutModeOption.TEARDROP -> s.copy(isLeftCutout = false, isTeardropCutout = true)
+                                CutoutModeOption.CENTER -> s.copy(isLeftCutout = false, isRightCutout = false, isTeardropCutout = false)
+                                CutoutModeOption.LEFT -> s.copy(isLeftCutout = true, isRightCutout = false, isTeardropCutout = false)
+                                CutoutModeOption.RIGHT -> s.copy(isLeftCutout = false, isRightCutout = true, isTeardropCutout = false)
+                                CutoutModeOption.TEARDROP -> s.copy(isLeftCutout = false, isRightCutout = false, isTeardropCutout = true)
                             }
                         }
                     }
@@ -2134,12 +2660,14 @@ fun DimensionsPage(
                 }
             }
         }
+        }
     }
 }
 
 enum class CutoutModeOption {
     CENTER,
     LEFT,
+    RIGHT,
     TEARDROP
 }
 
@@ -2164,7 +2692,7 @@ fun CutoutPositionSelectorCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 CutoutPositionOptionButton(
                     label = "Center",
@@ -2178,6 +2706,13 @@ fun CutoutPositionSelectorCard(
                     mode = CutoutModeOption.LEFT,
                     isSelected = selectedMode == CutoutModeOption.LEFT,
                     onClick = { onSelectMode(CutoutModeOption.LEFT) },
+                    modifier = Modifier.weight(1f)
+                )
+                CutoutPositionOptionButton(
+                    label = "Right",
+                    mode = CutoutModeOption.RIGHT,
+                    isSelected = selectedMode == CutoutModeOption.RIGHT,
+                    onClick = { onSelectMode(CutoutModeOption.RIGHT) },
                     modifier = Modifier.weight(1f)
                 )
                 CutoutPositionOptionButton(
@@ -2318,6 +2853,16 @@ private fun CutoutPositionOptionButton(
                             center = androidx.compose.ui.geometry.Offset(holeX, holeY)
                         )
                     }
+                    CutoutModeOption.RIGHT -> {
+                        val holeY = topY + 12.dp.toPx()
+                        val holeRadius = 4.2.dp.toPx()
+                        val holeX = rightX - 14.dp.toPx()
+                        drawCircle(
+                            color = cutoutDotColor,
+                            radius = holeRadius,
+                            center = androidx.compose.ui.geometry.Offset(holeX, holeY)
+                        )
+                    }
                     CutoutModeOption.TEARDROP -> {
                         // Outward-rounded top corners blending from the top bezel into a centered tear-drop semicircle
                         val dropR = 7.dp.toPx()
@@ -2372,25 +2917,43 @@ fun AppearancePage(
     var showFontDialog by remember { mutableStateOf(false) }
 
     if (showFontDialog) {
-        AlertDialog(
+        val fontSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
             onDismissRequest = { showFontDialog = false },
-            title = { Text("Select Font", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    ISLAND_FONTS.forEach { fontOption ->
-                        val isSelected = (settings.fontKey == fontOption.key) || (settings.fontKey.isBlank() && fontOption.key == "DEFAULT")
+            sheetState = fontSheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Select Font",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                ISLAND_FONTS.forEach { fontOption ->
+                    val isSelected = (settings.fontKey == fontOption.key) || (settings.fontKey.isBlank() && fontOption.key == "DEFAULT")
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                onUpdateSettings { it.copy(fontKey = fontOption.key) }
+                                showFontDialog = false
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    onUpdateSettings { it.copy(fontKey = fontOption.key) }
-                                    showFontDialog = false
-                                }
-                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -2398,7 +2961,7 @@ fun AppearancePage(
                                 text = fontOption.name,
                                 fontFamily = fontOption.family,
                                 fontSize = 16.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                             RadioButton(
@@ -2411,13 +2974,8 @@ fun AppearancePage(
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showFontDialog = false }) {
-                    Text("Done")
-                }
             }
-        )
+        }
     }
 
     Scaffold(
@@ -2439,10 +2997,21 @@ fun AppearancePage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -2590,16 +3159,7 @@ fun AppearancePage(
                             Text(currentFontName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         },
                         leadingContent = {
-                            Surface(
-                                modifier = Modifier.size(38.dp),
-                                shape = M3Cookie6Shape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.FontDownload, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                            CookieIconBox(icon = Icons.Default.FontDownload)
                         },
                         trailingContent = {
                             Icon(
@@ -2735,16 +3295,7 @@ fun AppearancePage(
                         headlineContent = { Text("Media Player Customisation", fontWeight = FontWeight.SemiBold) },
                         supportingContent = { Text("Preview, controls alignment, layer order & animations", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                         leadingContent = {
-                            Surface(
-                                modifier = Modifier.size(38.dp),
-                                shape = M3Cookie6Shape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                            CookieIconBox(icon = Icons.Default.MusicNote)
                         },
                         trailingContent = {
                             Icon(
@@ -2764,6 +3315,7 @@ fun AppearancePage(
                 AnimationCurveEditor(settings = settings, onUpdateSettings = onUpdateSettings)
             }
         }
+        }
     }
 }
 
@@ -2781,40 +3333,62 @@ fun GeneralPage(
     var weatherCityInput by remember(settings.weatherCity) { mutableStateOf(settings.weatherCity) }
 
     if (showWeatherDialog) {
-        AlertDialog(
+        val weatherSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
             onDismissRequest = { showWeatherDialog = false },
-            title = { Text("Weather Location") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Enter a city or location name to show weather for (e.g. London, Paris, New York, Thessaloniki). Leave blank for automatic time-zone approximation.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    OutlinedTextField(
-                        value = weatherCityInput,
-                        onValueChange = { weatherCityInput = it },
-                        label = { Text("City or Town") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onUpdateSettings { it.copy(weatherCity = weatherCityInput.trim()) }
-                        showWeatherDialog = false
-                    }
+            sheetState = weatherSheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Weather Location",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Enter a city or location name to show weather for (e.g. London, Paris, New York, Thessaloniki). Leave blank for automatic time-zone approximation.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = weatherCityInput,
+                    onValueChange = { weatherCityInput = it },
+                    label = { Text("City or Town") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWeatherDialog = false }) {
-                    Text("Cancel")
+                    OutlinedButton(
+                        onClick = { showWeatherDialog = false },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            onUpdateSettings { it.copy(weatherCity = weatherCityInput.trim()) }
+                            showWeatherDialog = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Save", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-        )
+        }
     }
 
     Scaffold(
@@ -2836,10 +3410,21 @@ fun GeneralPage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -3034,16 +3619,7 @@ fun GeneralPage(
                                 )
                             },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.WbSunny, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
+                                CookieIconBox(icon = Icons.Default.WbSunny)
                             },
                             trailingContent = {
                                 Icon(
@@ -3057,6 +3633,7 @@ fun GeneralPage(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -3321,10 +3898,21 @@ fun MediaPlayerCustomizationPage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -3388,6 +3976,7 @@ fun MediaPlayerCustomizationPage(
                             scale = 1.0f,
                             spinningAlbumArt = settings.spinningAlbumArt,
                             wavyProgressBar = settings.wavyProgressBar,
+                            showMediaLyrics = settings.showMediaLyrics,
                             designLanguage = settings.designLanguage,
                             mediaControlAlignment = settings.mediaControlAlignment,
                             mediaLayersOrder = settings.mediaLayersOrder
@@ -3493,16 +4082,7 @@ fun MediaPlayerCustomizationPage(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
                                 leadingContent = {
-                                    Surface(
-                                        modifier = Modifier.size(38.dp),
-                                        shape = M3Cookie6Shape,
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.primary
-                                    ) {
-                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                    }
+                                    CookieIconBox(icon = icon)
                                 },
                                 trailingContent = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3615,6 +4195,25 @@ fun MediaPlayerCustomizationPage(
                         )
                     }
 
+                    SettingsCardItem(position = GroupPosition.MIDDLE, isActive = settings.showMediaLyrics) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("1-Line Karaoke Lyrics", fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text("Shows synced per-line lyrics when available", style = MaterialTheme.typography.bodySmall) },
+                            leadingContent = {
+                                Icon(Icons.Default.Subtitles, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.showMediaLyrics,
+                                    onCheckedChange = { enabled ->
+                                        onUpdateSettings { it.copy(showMediaLyrics = enabled) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+
                     SettingsCardItem(position = GroupPosition.BOTTOM, isActive = settings.blurredAlbumArtBackground) {
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -3635,6 +4234,7 @@ fun MediaPlayerCustomizationPage(
                 }
             }
         }
+        }
     }
 }
 
@@ -3650,6 +4250,8 @@ fun DroidbarPage(
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    val tasksRepo = remember { com.droidbubble.app.tasks.TasksRepository.getInstance(context) }
+    val allShortcuts by tasksRepo.shortcuts.collectAsState()
 
     Scaffold(
         modifier = modifier,
@@ -3670,10 +4272,21 @@ fun DroidbarPage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -3684,16 +4297,10 @@ fun DroidbarPage(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         headlineContent = { Text("Enable Droidbar", fontWeight = FontWeight.SemiBold) },
                         leadingContent = {
-                            Surface(
-                                modifier = Modifier.size(38.dp),
-                                shape = M3Cookie6Shape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.VerticalSplit, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                            CookieIconBox(
+                                icon = Icons.Default.VerticalSplit,
+                                isChecked = settings.droidbarEnabled
+                            )
                         },
                         trailingContent = {
                             Switch(
@@ -3724,16 +4331,7 @@ fun DroidbarPage(
                             )
                         },
                         leadingContent = {
-                            Surface(
-                                modifier = Modifier.size(38.dp),
-                                shape = M3Cookie6Shape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                            CookieIconBox(icon = Icons.Default.Apps)
                         },
                         trailingContent = {
                             Icon(
@@ -3797,21 +4395,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Flashlight", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.FlashlightOn,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.FlashlightOn,
+                                    isChecked = settings.droidbarShowFlashlight
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -3829,21 +4416,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Ring mode", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.NotificationsActive,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.NotificationsActive,
+                                    isChecked = settings.droidbarShowRingMode
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -3861,21 +4437,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Screenshot", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Screenshot,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.Screenshot,
+                                    isChecked = settings.droidbarShowScreenshot
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -3893,21 +4458,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Wi-Fi", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Wifi,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.Wifi,
+                                    isChecked = settings.droidbarShowWifi
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -3925,21 +4479,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Mobile data", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.SignalCellularAlt,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.SignalCellularAlt,
+                                    isChecked = settings.droidbarShowMobileData
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -3950,6 +4493,59 @@ fun DroidbarPage(
                                 )
                             }
                         )
+                    }
+                }
+            }
+
+            // TASK SHORTCUTS IN DROIDBAR SECTION
+            if (allShortcuts.isNotEmpty()) {
+                item {
+                    SectionHeader(title = "Task Shortcuts", icon = Icons.Default.Bolt)
+                }
+
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        allShortcuts.forEachIndexed { index, shortcut ->
+                            val pos = when {
+                                allShortcuts.size == 1 -> GroupPosition.SINGLE
+                                index == 0 -> GroupPosition.TOP
+                                index == allShortcuts.lastIndex -> GroupPosition.BOTTOM
+                                else -> GroupPosition.MIDDLE
+                            }
+                            val isAdded = shortcut.showInDroidbar || settings.droidbarShortcutIds.contains(shortcut.id)
+
+                            SettingsCardItem(position = pos, isActive = isAdded) {
+                                ListItem(
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    headlineContent = { Text(shortcut.name, fontWeight = FontWeight.SemiBold) },
+                                    leadingContent = {
+                                        CookieIconBox(
+                                            icon = com.droidbubble.app.tasks.TaskIcons.getIcon(shortcut.iconName),
+                                            isChecked = isAdded
+                                        )
+                                    },
+                                    trailingContent = {
+                                        Switch(
+                                            checked = isAdded,
+                                            onCheckedChange = { checked ->
+                                                tasksRepo.saveShortcut(shortcut.copy(showInDroidbar = checked))
+                                                onUpdateSettings { current ->
+                                                    val updatedIds = if (checked) {
+                                                        (current.droidbarShortcutIds + shortcut.id).distinct()
+                                                    } else {
+                                                        current.droidbarShortcutIds - shortcut.id
+                                                    }
+                                                    current.copy(droidbarShortcutIds = updatedIds)
+                                                }
+                                            }
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -4005,21 +4601,10 @@ fun DroidbarPage(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Haptic feedback", fontWeight = FontWeight.SemiBold) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = M3Cookie6Shape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Vibration,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                CookieIconBox(
+                                    icon = Icons.Default.Vibration,
+                                    isChecked = settings.droidbarHapticsEnabled
+                                )
                             },
                             trailingContent = {
                                 Switch(
@@ -4033,6 +4618,7 @@ fun DroidbarPage(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -4048,6 +4634,8 @@ fun DroidbarAppsConfigPage(
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    val tasksRepo = remember { com.droidbubble.app.tasks.TasksRepository.getInstance(context) }
+    val allShortcuts by tasksRepo.shortcuts.collectAsState()
     var slotToEdit by remember { mutableIntStateOf(-1) }
     var showAppPicker by remember { mutableStateOf(false) }
 
@@ -4070,10 +4658,21 @@ fun DroidbarAppsConfigPage(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        val pageListState = rememberLazyListState()
+        val pageIsScrolled by remember {
+            derivedStateOf {
+                pageListState.firstVisibleItemIndex > 0 || pageListState.firstVisibleItemScrollOffset > 6
+            }
+        }
+        ProgressiveTopBlurBox(
+            isScrolled = pageIsScrolled,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -4196,6 +4795,7 @@ fun DroidbarAppsConfigPage(
                 }
             }
         }
+        }
     }
 
     if (showAppPicker && slotToEdit >= 0) {
@@ -4218,6 +4818,7 @@ fun DroidbarAppsConfigPage(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppPickerDialog(
     onDismiss: () -> Unit,
@@ -4244,49 +4845,66 @@ fun AppPickerDialog(
         }
     }
 
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Select an App", fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 200.dp, max = 450.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search apps...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 260.dp, max = 540.dp)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Select an App",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
 
-                if (isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(filteredApps, key = { it.packageName }) { app ->
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search apps...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredApps, key = { it.packageName }) { app ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { onSelectApp(app) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onSelectApp(app) }
-                                    .padding(vertical = 8.dp, horizontal = 10.dp),
+                                    .padding(vertical = 10.dp, horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
@@ -4308,7 +4926,7 @@ fun AppPickerDialog(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = app.label,
-                                        fontWeight = FontWeight.Medium,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -4325,11 +4943,6 @@ fun AppPickerDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
         }
-    )
+    }
 }

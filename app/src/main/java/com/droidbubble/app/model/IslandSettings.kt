@@ -34,6 +34,7 @@ data class IslandSettings(
     val topOffsetDp: Int = 12,
     val horizontalOffsetDp: Int = 0,
     val isLeftCutout: Boolean = false,
+    val isRightCutout: Boolean = false,
     val isTeardropCutout: Boolean = false,
     val showOutline: Boolean = true,
     val outlineColorArgb: Long = 0x33FFFFFF, // Sleek translucent silver
@@ -76,6 +77,7 @@ data class IslandSettings(
     val mediaWaveAnimation: Boolean = true,
     val spinningAlbumArt: Boolean = false,
     val wavyProgressBar: Boolean = true,
+    val showMediaLyrics: Boolean = true,
     val hideOnLockScreen: Boolean = false,
     val expandDamping: Float = 0.74f,
     val expandStiffness: Float = 380f,
@@ -94,6 +96,7 @@ data class IslandSettings(
     val droidbarShowMobileData: Boolean = true,
     val droidbarUseMostUsedApps: Boolean = true,
     val droidbarCustomApps: List<String> = emptyList(),
+    val droidbarShortcutIds: List<String> = emptyList(),
     val droidbarBackgroundOpacity: Float = 1.0f,
     val droidbarMaxHeightDp: Int = 600,
     val droidbarYOffsetDp: Int = 0,

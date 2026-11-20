@@ -3,8 +3,11 @@ package com.droidbubble.app.service
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.Context
+import android.media.AudioManager
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.droidbubble.app.island.IslandStateManager
+import com.droidbubble.app.tools.SystemToolsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -52,7 +55,24 @@ class IslandAccessibilityService : AccessibilityService() {
                 IslandStateManager.unDismissMedia(pkg)
             }
             NotificationReceiverService.instance?.refreshMedia()
+            SystemToolsManager.getInstance(applicationContext).onForegroundAppChanged(pkg)
         }
+    }
+
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (event != null && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    SystemToolsManager.getInstance(applicationContext)
+                        .onVolumeKeyPressed(AudioManager.ADJUST_RAISE)
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    SystemToolsManager.getInstance(applicationContext)
+                        .onVolumeKeyPressed(AudioManager.ADJUST_LOWER)
+                }
+            }
+        }
+        return super.onKeyEvent(event)
     }
 
     override fun onInterrupt() {}

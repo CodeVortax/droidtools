@@ -541,6 +541,15 @@ class NotificationReceiverService : NotificationListenerService() {
 
         val isLiked = userExplicitLike ?: (isLikedFromRating || isLikedFromAction)
 
+        val embeddedLyrics = metadata?.getString("android.media.metadata.LYRICS")
+            ?: metadata?.getString("lyrics")
+        com.droidbubble.app.island.LyricsManager.onTrackChanged(
+            title = title,
+            artist = artist,
+            durationMs = duration,
+            embeddedLyrics = embeddedLyrics
+        )
+
         IslandStateManager.updateMedia(
             MediaInfo(
                 packageName = controller.packageName,
@@ -897,7 +906,8 @@ class NotificationReceiverService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
-        if (!currentSettings.showNotifications && !currentSettings.showLiveProgress && !currentSettings.showScreenRecording && !currentSettings.showCalls) return
+        val lightingCfg = com.droidbubble.app.tools.SystemToolsManager.getInstance(this).notificationLightingConfig.value
+        if (!currentSettings.showNotifications && !currentSettings.showLiveProgress && !currentSettings.showScreenRecording && !currentSettings.showCalls && !lightingCfg.enabled) return
 
         val packageName = sbn.packageName
         if (packageName == this.packageName) return // Ignore self
@@ -979,7 +989,7 @@ class NotificationReceiverService : NotificationListenerService() {
         if (hasProgress) {
             if (!currentSettings.showLiveProgress) return
         } else {
-            if (!currentSettings.showNotifications) return
+            if (!currentSettings.showNotifications && !lightingCfg.enabled) return
         }
 
         // Skip ongoing notifications UNLESS they report live progress (e.g. downloads, navigation)
@@ -1002,6 +1012,17 @@ class NotificationReceiverService : NotificationListenerService() {
         }
 
         val iconBitmap = extractNotificationBitmap(notification, packageName)
+
+        if (!hasProgress && lightingCfg.enabled) {
+            val extractedColor = extractDominantColorArgb(iconBitmap)
+            com.droidbubble.app.tools.SystemToolsManager.getInstance(this).triggerNotificationLighting(
+                packageName = packageName,
+                extractedColorArgb = extractedColor,
+                isPreview = false
+            )
+        }
+
+        if (!hasProgress && !currentSettings.showNotifications) return
 
         val actions = mutableListOf<NotificationAction>()
         notification.actions?.forEach { action ->
@@ -1070,6 +1091,34 @@ class NotificationReceiverService : NotificationListenerService() {
         IslandStateManager.removeNotification(sbn.key)
     }
 
+    fun cancelMatchingNotifications(targetQuery: String, removeAll: Boolean) {
+        try {
+            val query = targetQuery.trim().lowercase()
+            val list = activeNotifications ?: emptyArray()
+            for (sbn in list) {
+                val extras = sbn.notification?.extras
+                val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.lowercase() ?: ""
+                val text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.lowercase() ?: ""
+                val pkg = sbn.packageName?.lowercase() ?: ""
+                val tag = sbn.tag?.lowercase() ?: ""
+                val key = sbn.key?.lowercase() ?: ""
+
+                val matches = removeAll || query.isBlank() ||
+                        title.contains(query) ||
+                        text.contains(query) ||
+                        pkg.contains(query) ||
+                        tag.contains(query) ||
+                        key.contains(query)
+
+                if (matches) {
+                    runCatching { cancelNotification(sbn.key) }
+                    IslandStateManager.removeNotification(sbn.key)
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun extractNotificationBitmap(notification: Notification, packageName: String): Bitmap? {
         val largeIcon: Icon? = notification.getLargeIcon()
         if (largeIcon != null) {
@@ -1099,16 +1148,58 @@ class NotificationReceiverService : NotificationListenerService() {
     }
 
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
-        if (drawable is BitmapDrawable && drawable.bitmap != null) {
-            return drawable.bitmap
+        if (drawable is BitmapDrawable && drawable.bitmap != null && !drawable.bitmap.isRecycled) {
+            val src = drawable.bitmap
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && src.config == Bitmap.Config.HARDWARE) {
+                src.copy(Bitmap.Config.ARGB_8888, false)?.let { return it }
+            } else {
+                return src
+            }
         }
-        val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
-        val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+        val width = (if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96).coerceIn(1, 96)
+        val height = (if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96).coerceIn(1, 96)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
         return bitmap
+    }
+
+    private fun extractDominantColorArgb(bitmap: Bitmap?): Long? {
+        if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) return null
+        return try {
+            var rSum = 0L
+            var gSum = 0L
+            var bSum = 0L
+            var count = 0L
+            val stepX = (bitmap.width / 8).coerceAtLeast(1)
+            val stepY = (bitmap.height / 8).coerceAtLeast(1)
+            for (x in 0 until bitmap.width step stepX) {
+                for (y in 0 until bitmap.height step stepY) {
+                    val px = bitmap.getPixel(x, y)
+                    val a = (px ushr 24) and 0xFF
+                    if (a < 120) continue
+                    val r = (px ushr 16) and 0xFF
+                    val g = (px ushr 8) and 0xFF
+                    val b = px and 0xFF
+                    // Skip near-black or near-white neutral pixels
+                    val maxC = maxOf(r, g, b)
+                    val minC = minOf(r, g, b)
+                    if (maxC - minC < 25) continue
+                    rSum += r
+                    gSum += g
+                    bSum += b
+                    count++
+                }
+            }
+            if (count == 0L) return null
+            val avgR = (rSum / count).coerceIn(0, 255)
+            val avgG = (gSum / count).coerceIn(0, 255)
+            val avgB = (bSum / count).coerceIn(0, 255)
+            (0xFFL shl 24) or (avgR shl 16) or (avgG shl 8) or avgB
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun isMediaNotification(sbn: StatusBarNotification, notification: Notification): Boolean {

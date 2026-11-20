@@ -27,6 +27,7 @@ class SettingsRepository(private val context: Context) {
         val TOP_OFFSET_DP = intPreferencesKey("top_offset_dp")
         val HORIZONTAL_OFFSET_DP = intPreferencesKey("horizontal_offset_dp")
         val IS_LEFT_CUTOUT = booleanPreferencesKey("is_left_cutout")
+        val IS_RIGHT_CUTOUT = booleanPreferencesKey("is_right_cutout")
         val IS_TEARDROP_CUTOUT = booleanPreferencesKey("is_teardrop_cutout")
         val SHOW_OUTLINE = booleanPreferencesKey("show_outline")
         val OUTLINE_COLOR_ARGB = longPreferencesKey("outline_color_argb")
@@ -70,6 +71,7 @@ class SettingsRepository(private val context: Context) {
         val MEDIA_WAVE_ANIMATION = booleanPreferencesKey("media_wave_animation")
         val SPINNING_ALBUM_ART = booleanPreferencesKey("spinning_album_art")
         val WAVY_PROGRESS_BAR = booleanPreferencesKey("wavy_progress_bar")
+        val SHOW_MEDIA_LYRICS = booleanPreferencesKey("show_media_lyrics")
         val HIDE_ON_LOCK_SCREEN = booleanPreferencesKey("hide_on_lock_screen")
         val EXPAND_DAMPING = floatPreferencesKey("expand_damping")
         val EXPAND_STIFFNESS = floatPreferencesKey("expand_stiffness")
@@ -88,6 +90,7 @@ class SettingsRepository(private val context: Context) {
         val DROIDBAR_SHOW_MOBILE_DATA = booleanPreferencesKey("droidbar_show_mobile_data")
         val DROIDBAR_USE_MOST_USED_APPS = booleanPreferencesKey("droidbar_use_most_used_apps")
         val DROIDBAR_CUSTOM_APPS = stringPreferencesKey("droidbar_custom_apps")
+        val DROIDBAR_SHORTCUT_IDS = stringPreferencesKey("droidbar_shortcut_ids")
         val DROIDBAR_BACKGROUND_OPACITY = floatPreferencesKey("droidbar_background_opacity")
         val DROIDBAR_MAX_HEIGHT_DP = intPreferencesKey("droidbar_max_height_dp")
         val DROIDBAR_Y_OFFSET_DP = intPreferencesKey("droidbar_y_offset_dp")
@@ -111,6 +114,7 @@ class SettingsRepository(private val context: Context) {
             topOffsetDp = preferences[PreferencesKeys.TOP_OFFSET_DP] ?: 12,
             horizontalOffsetDp = preferences[PreferencesKeys.HORIZONTAL_OFFSET_DP] ?: 0,
             isLeftCutout = preferences[PreferencesKeys.IS_LEFT_CUTOUT] ?: false,
+            isRightCutout = preferences[PreferencesKeys.IS_RIGHT_CUTOUT] ?: false,
             isTeardropCutout = preferences[PreferencesKeys.IS_TEARDROP_CUTOUT] ?: false,
             showOutline = preferences[PreferencesKeys.SHOW_OUTLINE] ?: true,
             outlineColorArgb = preferences[PreferencesKeys.OUTLINE_COLOR_ARGB] ?: 0x33FFFFFF,
@@ -155,6 +159,7 @@ class SettingsRepository(private val context: Context) {
             mediaWaveAnimation = preferences[PreferencesKeys.MEDIA_WAVE_ANIMATION] ?: true,
             spinningAlbumArt = preferences[PreferencesKeys.SPINNING_ALBUM_ART] ?: false,
             wavyProgressBar = preferences[PreferencesKeys.WAVY_PROGRESS_BAR] ?: true,
+            showMediaLyrics = preferences[PreferencesKeys.SHOW_MEDIA_LYRICS] ?: true,
             hideOnLockScreen = preferences[PreferencesKeys.HIDE_ON_LOCK_SCREEN] ?: false,
             expandDamping = preferences[PreferencesKeys.EXPAND_DAMPING] ?: 0.74f,
             expandStiffness = preferences[PreferencesKeys.EXPAND_STIFFNESS] ?: 380f,
@@ -190,6 +195,10 @@ class SettingsRepository(private val context: Context) {
                 ?.split(",")
                 ?.map { it.trim() }
                 ?.filter { it.isNotBlank() } ?: emptyList(),
+            droidbarShortcutIds = preferences[PreferencesKeys.DROIDBAR_SHORTCUT_IDS]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() } ?: emptyList(),
             droidbarBackgroundOpacity = preferences[PreferencesKeys.DROIDBAR_BACKGROUND_OPACITY] ?: 1.0f,
             droidbarMaxHeightDp = preferences[PreferencesKeys.DROIDBAR_MAX_HEIGHT_DP] ?: 600,
             droidbarYOffsetDp = preferences[PreferencesKeys.DROIDBAR_Y_OFFSET_DP] ?: 0,
@@ -215,6 +224,7 @@ class SettingsRepository(private val context: Context) {
                 topOffsetDp = preferences[PreferencesKeys.TOP_OFFSET_DP] ?: 12,
                 horizontalOffsetDp = preferences[PreferencesKeys.HORIZONTAL_OFFSET_DP] ?: 0,
                 isLeftCutout = preferences[PreferencesKeys.IS_LEFT_CUTOUT] ?: false,
+                isRightCutout = preferences[PreferencesKeys.IS_RIGHT_CUTOUT] ?: false,
                 isTeardropCutout = preferences[PreferencesKeys.IS_TEARDROP_CUTOUT] ?: false,
                 showOutline = preferences[PreferencesKeys.SHOW_OUTLINE] ?: true,
                 outlineColorArgb = preferences[PreferencesKeys.OUTLINE_COLOR_ARGB] ?: 0x33FFFFFF,
@@ -259,6 +269,7 @@ class SettingsRepository(private val context: Context) {
             mediaWaveAnimation = preferences[PreferencesKeys.MEDIA_WAVE_ANIMATION] ?: true,
             spinningAlbumArt = preferences[PreferencesKeys.SPINNING_ALBUM_ART] ?: false,
             wavyProgressBar = preferences[PreferencesKeys.WAVY_PROGRESS_BAR] ?: true,
+            showMediaLyrics = preferences[PreferencesKeys.SHOW_MEDIA_LYRICS] ?: true,
             hideOnLockScreen = preferences[PreferencesKeys.HIDE_ON_LOCK_SCREEN] ?: false,
             expandDamping = preferences[PreferencesKeys.EXPAND_DAMPING] ?: 0.74f,
             expandStiffness = preferences[PreferencesKeys.EXPAND_STIFFNESS] ?: 380f,
@@ -294,6 +305,10 @@ class SettingsRepository(private val context: Context) {
                 ?.split(",")
                 ?.map { it.trim() }
                 ?.filter { it.isNotBlank() } ?: emptyList(),
+            droidbarShortcutIds = preferences[PreferencesKeys.DROIDBAR_SHORTCUT_IDS]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() } ?: emptyList(),
             droidbarBackgroundOpacity = preferences[PreferencesKeys.DROIDBAR_BACKGROUND_OPACITY] ?: 1.0f,
             droidbarMaxHeightDp = preferences[PreferencesKeys.DROIDBAR_MAX_HEIGHT_DP] ?: 600,
             droidbarYOffsetDp = preferences[PreferencesKeys.DROIDBAR_Y_OFFSET_DP] ?: 0,
@@ -309,6 +324,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.TOP_OFFSET_DP] = newSettings.topOffsetDp
             preferences[PreferencesKeys.HORIZONTAL_OFFSET_DP] = newSettings.horizontalOffsetDp
             preferences[PreferencesKeys.IS_LEFT_CUTOUT] = newSettings.isLeftCutout
+            preferences[PreferencesKeys.IS_RIGHT_CUTOUT] = newSettings.isRightCutout
             preferences[PreferencesKeys.IS_TEARDROP_CUTOUT] = newSettings.isTeardropCutout
             preferences[PreferencesKeys.SHOW_OUTLINE] = newSettings.showOutline
             preferences[PreferencesKeys.OUTLINE_COLOR_ARGB] = newSettings.outlineColorArgb
@@ -352,6 +368,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.MEDIA_WAVE_ANIMATION] = newSettings.mediaWaveAnimation
             preferences[PreferencesKeys.SPINNING_ALBUM_ART] = newSettings.spinningAlbumArt
             preferences[PreferencesKeys.WAVY_PROGRESS_BAR] = newSettings.wavyProgressBar
+            preferences[PreferencesKeys.SHOW_MEDIA_LYRICS] = newSettings.showMediaLyrics
             preferences[PreferencesKeys.HIDE_ON_LOCK_SCREEN] = newSettings.hideOnLockScreen
             preferences[PreferencesKeys.EXPAND_DAMPING] = newSettings.expandDamping
             preferences[PreferencesKeys.EXPAND_STIFFNESS] = newSettings.expandStiffness
@@ -370,6 +387,7 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.DROIDBAR_SHOW_MOBILE_DATA] = newSettings.droidbarShowMobileData
             preferences[PreferencesKeys.DROIDBAR_USE_MOST_USED_APPS] = newSettings.droidbarUseMostUsedApps
             preferences[PreferencesKeys.DROIDBAR_CUSTOM_APPS] = newSettings.droidbarCustomApps.joinToString(",")
+            preferences[PreferencesKeys.DROIDBAR_SHORTCUT_IDS] = newSettings.droidbarShortcutIds.joinToString(",")
             preferences[PreferencesKeys.DROIDBAR_BACKGROUND_OPACITY] = newSettings.droidbarBackgroundOpacity
             preferences[PreferencesKeys.DROIDBAR_MAX_HEIGHT_DP] = newSettings.droidbarMaxHeightDp
             preferences[PreferencesKeys.DROIDBAR_Y_OFFSET_DP] = newSettings.droidbarYOffsetDp

@@ -72,6 +72,10 @@ import com.droidbubble.app.island.IslandStateManager
 import com.droidbubble.app.island.M3CookieShape
 import com.droidbubble.app.model.IslandSettings
 import com.droidbubble.app.service.IslandAccessibilityService
+import com.droidbubble.app.tasks.TaskExecutor
+import com.droidbubble.app.tasks.TaskIcons
+import com.droidbubble.app.tasks.TaskShortcut
+import com.droidbubble.app.tasks.TasksRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,6 +99,12 @@ fun DroidbarOverlay(
     var isExpanded by remember { mutableStateOf(false) }
     var isWindowExpanded by remember { mutableStateOf(false) }
     var apps by remember { mutableStateOf<List<BarAppInfo>>(emptyList()) }
+
+    val tasksRepo = remember { TasksRepository.getInstance(context) }
+    val allShortcuts by tasksRepo.shortcuts.collectAsState()
+    val droidbarShortcuts = remember(allShortcuts, settings.droidbarShortcutIds) {
+        allShortcuts.filter { it.showInDroidbar || settings.droidbarShortcutIds.contains(it.id) }
+    }
 
     // Flashlight state from IslandStateManager
     val isFlashlightOn by IslandStateManager.isFlashlightOn.collectAsState()
@@ -172,19 +182,24 @@ fun DroidbarOverlay(
         if (isExpanded) {
             isWindowExpanded = true
             onExpandChanged(true)
-            apps = loadApps()
+            launch {
+                val refreshed = loadApps()
+                if (refreshed.isNotEmpty()) {
+                    apps = refreshed
+                }
+            }
             animProgress.animateTo(
                 targetValue = 1f,
                 animationSpec = spring(
-                    dampingRatio = 0.68f,
-                    stiffness = 380f
+                    dampingRatio = 0.72f,
+                    stiffness = 460f
                 )
             )
         } else {
             animProgress.animateTo(
                 targetValue = 0f,
                 animationSpec = tween(
-                    durationMillis = 260,
+                    durationMillis = 240,
                     easing = FastOutSlowInEasing
                 )
             )
@@ -200,11 +215,15 @@ fun DroidbarOverlay(
             (if (settings.droidbarShowMobileData) 1 else 0)
 
     val hasControls = controlCount > 0
+    val shortcutCount = droidbarShortcuts.size
+    val hasShortcuts = shortcutCount > 0
     val appCount = apps.size
     val hasApps = appCount > 0
-    val totalItems = controlCount + appCount
+    val totalItems = controlCount + shortcutCount + appCount
+    val dividerCount = (if (hasControls && (hasShortcuts || hasApps)) 1 else 0) +
+            (if (hasShortcuts && hasApps) 1 else 0)
 
-    val targetExpandedHeight = ((totalItems * 48) + (if (hasControls && hasApps) 14 else 0) + 24).dp.coerceAtLeast(80.dp)
+    val targetExpandedHeight = ((totalItems * 48) + (dividerCount * 14) + 24).dp.coerceAtLeast(80.dp)
     val maxAvailableHeight = (configuration.screenHeightDp - 64).dp.coerceAtLeast(180.dp)
     val configuredMaxHeight = settings.droidbarMaxHeightDp.dp
     val finalExpandedHeight = targetExpandedHeight.coerceAtMost(configuredMaxHeight).coerceAtMost(maxAvailableHeight)
@@ -274,11 +293,11 @@ fun DroidbarOverlay(
                 .padding(end = endMargin)
                 .width(barWidth)
                 .height(barHeight)
-                .shadow(
-                    elevation = if (isExpanded) 12.dp else 4.dp,
+                .graphicsLayer {
                     shape = currentShape
-                )
-                .clip(currentShape)
+                    clip = true
+                    shadowElevation = (if (isExpanded) 12.dp else 4.dp).toPx()
+                }
                 .background(Color.Black.copy(alpha = settings.droidbarBackgroundOpacity.coerceIn(0f, 1f)))
                 .clickable(
                     indication = null,
@@ -518,8 +537,32 @@ fun DroidbarOverlay(
                             }
                         }
 
-                        // Subtle divider between controls and apps
-                        if (hasControls && hasApps) {
+                        // Subtle divider after controls
+                        if (hasControls && (hasShortcuts || hasApps)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(32.dp)
+                                    .height(1.dp)
+                                    .background(Color(0xFF38383A))
+                            )
+                        }
+
+                        // Task Shortcuts added to Droidbar
+                        droidbarShortcuts.forEach { shortcut ->
+                            DroidbarShortcutItem(
+                                shortcut = shortcut,
+                                hapticsEnabled = settings.droidbarHapticsEnabled,
+                                onTap = {
+                                    isExpanded = false
+                                    runCatching {
+                                        TaskExecutor.execute(context, shortcut)
+                                    }
+                                }
+                            )
+                        }
+
+                        // Subtle divider between shortcuts and apps
+                        if (hasShortcuts && hasApps) {
                             Box(
                                 modifier = Modifier
                                     .width(32.dp)
@@ -552,6 +595,43 @@ fun DroidbarOverlay(
 }
 
 @Composable
+private fun DroidbarShortcutItem(
+    shortcut: TaskShortcut,
+    hapticsEnabled: Boolean,
+    onTap: () -> Unit
+) {
+    val (bounceScale, triggerBounce) = rememberBounceScale()
+    val view = LocalView.current
+
+    Surface(
+        modifier = Modifier
+            .size(44.dp)
+            .graphicsLayer {
+                scaleX = bounceScale
+                scaleY = bounceScale
+            },
+        shape = M3CookieShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.primary,
+        onClick = {
+            triggerBounce()
+            if (hapticsEnabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
+            onTap()
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = TaskIcons.getIcon(shortcut.iconName),
+                contentDescription = shortcut.name,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun DroidbarAppItem(
     app: BarAppInfo,
     hapticsEnabled: Boolean,
@@ -578,10 +658,11 @@ private fun DroidbarAppItem(
             onTap()
         }
     ) {
+        val iconImage = remember(app.iconBitmap) { app.iconBitmap?.asImageBitmap() }
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            if (app.iconBitmap != null) {
+            if (iconImage != null) {
                 Image(
-                    bitmap = app.iconBitmap.asImageBitmap(),
+                    bitmap = iconImage,
                     contentDescription = app.label,
                     modifier = Modifier.size(32.dp)
                 )
